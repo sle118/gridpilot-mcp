@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ExcelMcp.Core</AssemblyName>
+    <RootNamespace>ExcelMcp.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

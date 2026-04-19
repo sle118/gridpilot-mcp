@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ExcelMcp.ComAdapter</AssemblyName>
+    <RootNamespace>ExcelMcp.ComAdapter</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ExcelMcp.Core/ExcelMcp.Core.csproj" />
+    <ProjectReference Include="../ExcelMcp.Bridge/ExcelMcp.Bridge.csproj" />
+  </ItemGroup>
+</Project>

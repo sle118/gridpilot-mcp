@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ExcelMcp.Bridge</AssemblyName>
+    <RootNamespace>ExcelMcp.Bridge</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ExcelMcp.Core/ExcelMcp.Core.csproj" />
+  </ItemGroup>
+</Project>

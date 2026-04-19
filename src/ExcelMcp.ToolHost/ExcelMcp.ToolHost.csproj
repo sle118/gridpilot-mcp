@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ExcelMcp.ToolHost</AssemblyName>
+    <RootNamespace>ExcelMcp.ToolHost</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ExcelMcp.Core/ExcelMcp.Core.csproj" />
+    <ProjectReference Include="../ExcelMcp.Bridge/ExcelMcp.Bridge.csproj" />
+    <ProjectReference Include="../ExcelMcp.ComAdapter/ExcelMcp.ComAdapter.csproj" />
+  </ItemGroup>
+</Project>

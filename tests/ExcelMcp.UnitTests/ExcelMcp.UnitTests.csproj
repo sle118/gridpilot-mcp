@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>ExcelMcp.UnitTests</AssemblyName>
+    <RootNamespace>ExcelMcp.UnitTests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ExcelMcp.Core/ExcelMcp.Core.csproj" />
+    <ProjectReference Include="../../src/ExcelMcp.Bridge/ExcelMcp.Bridge.csproj" />
+  </ItemGroup>
+</Project>
