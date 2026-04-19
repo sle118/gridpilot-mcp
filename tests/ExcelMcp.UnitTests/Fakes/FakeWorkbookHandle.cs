@@ -9,6 +9,11 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public string Name => "fake.xlsx";
     public string FullPath => @"C:\temp\fake.xlsx";
 
+    public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
+    public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
+    public IReadOnlyList<QuerySummary> Queries { get; set; } = Array.Empty<QuerySummary>();
+    public IReadOnlyList<ConnectionSummary> Connections { get; set; } = Array.Empty<ConnectionSummary>();
+
     public Func<string, Task<QueryDefinition>> OnGetQueryAsync { get; set; } =
         name => Task.FromResult(new QueryDefinition(name, "let Source = 1 in Source"));
 
@@ -16,15 +21,15 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         request => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
 
     public Func<string, Task<CleanupResult>> OnCleanupAsync { get; set; } =
-        pattern => Task.FromResult(new CleanupResult(0, Array.Empty<string>()));
+        pattern => Task.FromResult(new CleanupResult(0, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<OperationError>()));
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task SaveAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SheetSummary>>(Array.Empty<SheetSummary>());
-    public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TableSummary>>(Array.Empty<TableSummary>());
-    public Task<IReadOnlyList<QuerySummary>> ListQueriesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<QuerySummary>>(Array.Empty<QuerySummary>());
-    public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ConnectionSummary>>(Array.Empty<ConnectionSummary>());
+    public Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Sheets);
+    public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Tables);
+    public Task<IReadOnlyList<QuerySummary>> ListQueriesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Queries);
+    public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Connections);
     public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => OnGetQueryAsync(queryName);
     public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));

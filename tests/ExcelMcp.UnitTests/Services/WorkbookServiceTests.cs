@@ -7,6 +7,31 @@ namespace ExcelMcp.UnitTests.Services;
 public sealed class WorkbookServiceTests
 {
     [Fact]
+    public async Task InventoryMethods_ReturnDataFromWorkbookHandle()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            Sheets = [new SheetSummary("Sheet1", "Worksheet", true)],
+            Tables = [new TableSummary("Sheet1", "SalesTable", "$A$1:$D$12", true, "SalesQuery")],
+            Queries = [new QuerySummary("SalesQuery", true, false, "let Source = 1 in Source")],
+            Connections = [new ConnectionSummary("Query - SalesQuery", "2", true)]
+        };
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var sheets = await sut.ListSheetsAsync("C:/temp/book.xlsx");
+        var tables = await sut.ListTablesAsync("C:/temp/book.xlsx");
+        var queries = await sut.ListQueriesAsync("C:/temp/book.xlsx");
+        var connections = await sut.ListConnectionsAsync("C:/temp/book.xlsx");
+
+        Assert.Equal(fakeWorkbook.Sheets, sheets);
+        Assert.Equal(fakeWorkbook.Tables, tables);
+        Assert.Equal(fakeWorkbook.Queries, queries);
+        Assert.Equal(fakeWorkbook.Connections, connections);
+    }
+
+    [Fact]
     public async Task TryRunQueryAsync_UsesGeneratedTempNameWithPrefix()
     {
         var fakeWorkbook = new FakeWorkbookHandle();

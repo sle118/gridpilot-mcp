@@ -2,18 +2,15 @@
 
 ## Immediate priorities
 
-1. Implement workbook and query inventory over the new session and workbook seams.
-2. Add temp-query cleanup behavior and tests.
-3. Add targeted refresh primitives.
-4. Decide whether workbook open/attach behavior needs additional policy before broader tool-surface work.
-5. Add optional live Excel harness conventions.
+1. Add targeted refresh primitives over the new workbook and query seams.
+2. Implement query probing behavior without widening the MCP surface prematurely.
+3. Decide whether workbook open/attach behavior needs additional policy before broader tool-surface work.
+4. Add optional live Excel harness conventions.
 
 ## Suggested first bounded implementation slice
 
-- workbook inventory
-- query inventory
-- query definition read
-- cleanup of temporary diagnostic queries
+- targeted refresh
+- query probing
 - mock-first tests for the above
 
 ## Cautions
