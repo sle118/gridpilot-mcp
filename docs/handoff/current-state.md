@@ -12,6 +12,7 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - a C# solution skeleton using provisional `ExcelMcp.*` project names
 - unit/integration/live test placeholders
 - a first mock-based service example
+- a first COM-backed Excel session wrapper with scoped application-state restore for `DisplayAlerts`, `EnableEvents`, and `ScreenUpdating`
 - branding assets now folded into `branding/assets/`
 
 ## Important naming note
@@ -32,8 +33,7 @@ The intended architecture remains:
 
 ## Immediate gaps
 
-- no real Excel COM adapter implemented yet
 - no MCP transport implementation yet
-- no real session-state scoping implementation yet
 - no concrete query inventory or diagnostic probe implementation yet
+- no workbook/query inventory implementation over the new session foundation yet
 - no first backlog/delegation packet set yet

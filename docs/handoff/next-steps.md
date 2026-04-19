@@ -2,19 +2,14 @@
 
 ## Immediate priorities
 
-1. Expand the generated packs into a fresh workspace and create a clean bootstrap commit.
-2. Confirm repo naming, solution naming, and whether the temporary `ExcelMcp.*` internal names stay in place for the first iteration.
-3. Lock the first implementation slice in an ADR and handoff update.
-4. Implement the session abstraction and scoped application-state restore layer.
-5. Implement workbook and query inventory.
-6. Add temp-query cleanup behavior and tests.
-7. Add targeted refresh primitives.
-8. Add optional live Excel harness conventions.
+1. Implement workbook and query inventory over the new session and workbook seams.
+2. Add temp-query cleanup behavior and tests.
+3. Add targeted refresh primitives.
+4. Decide whether workbook open/attach behavior needs additional policy before broader tool-surface work.
+5. Add optional live Excel harness conventions.
 
 ## Suggested first bounded implementation slice
 
-- attach/open/close workbook session surface
-- session option scoping
 - workbook inventory
 - query inventory
 - query definition read

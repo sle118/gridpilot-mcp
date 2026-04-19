@@ -1,3 +1,5 @@
+using ExcelMcp.Core.Results;
+
 namespace ExcelMcp.Core.Abstractions;
 
 public interface IWorkbookHandle : IAsyncDisposable
