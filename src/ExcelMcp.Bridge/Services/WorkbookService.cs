@@ -128,4 +128,147 @@ public sealed class WorkbookService
 
         return result;
     }
+
+    public async Task<QueryFormulaUpdateResult> SetQueryFormulaAsync(
+        string workbookPath,
+        string queryName,
+        string formula,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new QueryFormulaUpdateResult(false, workbookPath, queryName, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SetQueryFormulaAsync(queryName, formula, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new QueryFormulaUpdateResult(true, workbookPath, queryName);
+        }
+        catch (Exception ex)
+        {
+            return new QueryFormulaUpdateResult(
+                false,
+                workbookPath,
+                queryName,
+                new OperationError(
+                    Code: "query_formula_update_failed",
+                    Message: $"Failed to set formula for query '{queryName}'.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
+    }
+
+    public async Task<RangeReadResult> ReadRangeAsync(
+        string workbookPath,
+        string sheetName,
+        string address,
+        CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        var range = await workbook.ReadRangeAsync(address, sheetName, cancellationToken);
+        return new RangeReadResult(
+            range.SheetName,
+            range.Address,
+            ConvertValues(range.Values));
+    }
+
+    public async Task<RangeWriteResult> WriteRangesAsync(
+        string workbookPath,
+        RangeWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new RangeWriteResult(false, workbookPath, 0, Array.Empty<string>(), safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            foreach (var write in request.Writes)
+            {
+                await PreflightWriteAsync(workbook, write, cancellationToken);
+            }
+
+            var appliedWrites = new List<string>(request.Writes.Count);
+            foreach (var write in request.Writes)
+            {
+                await workbook.WriteRangeAsync(write.Address, write.Values, write.SheetName, cancellationToken);
+                appliedWrites.Add(write.Identifier);
+            }
+
+            await workbook.SaveAsync(cancellationToken);
+            return new RangeWriteResult(true, workbookPath, appliedWrites.Count, appliedWrites);
+        }
+        catch (Exception ex)
+        {
+            return new RangeWriteResult(
+                false,
+                workbookPath,
+                0,
+                Array.Empty<string>(),
+                new OperationError(
+                    Code: "range_write_failed",
+                    Message: "Failed to write one or more workbook ranges.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
+    }
+
+    private static async Task PreflightWriteAsync(
+        IWorkbookHandle workbook,
+        RangeWriteTarget write,
+        CancellationToken cancellationToken)
+    {
+        ValidateValues(write.Values, write.Identifier);
+        var existing = await workbook.ReadRangeAsync(write.Address, write.SheetName, cancellationToken);
+        var expectedRows = GetRowCount(write.Values);
+        var expectedColumns = GetColumnCount(write.Values);
+        var actualRows = GetRowCount(existing.Values);
+        var actualColumns = GetColumnCount(existing.Values);
+
+        if (expectedRows != actualRows || expectedColumns != actualColumns)
+        {
+            throw new InvalidOperationException(
+                $"Write target '{write.Identifier}' has shape {actualRows}x{actualColumns}, but provided values have shape {expectedRows}x{expectedColumns}.");
+        }
+    }
+
+    private static void ValidateValues(object?[,] values, string identifier)
+    {
+        if (values.Length == 0)
+        {
+            throw new InvalidOperationException($"Write target '{identifier}' requires at least one value.");
+        }
+    }
+
+    private static int GetRowCount(Array values) =>
+        values.GetLength(0);
+
+    private static int GetColumnCount(Array values) =>
+        values.GetLength(1);
+
+    private static IReadOnlyList<IReadOnlyList<object?>> ConvertValues(object?[,] values)
+    {
+        var rows = new List<IReadOnlyList<object?>>();
+        for (var row = values.GetLowerBound(0); row <= values.GetUpperBound(0); row++)
+        {
+            var columns = new List<object?>();
+            for (var column = values.GetLowerBound(1); column <= values.GetUpperBound(1); column++)
+            {
+                columns.Add(values[row, column]);
+            }
+
+            rows.Add(columns);
+        }
+
+        return rows;
+    }
 }

@@ -36,6 +36,19 @@ internal sealed class AttachedLiveExcelTestContext : IAsyncDisposable
 
     public WorkbookService WorkbookService { get; }
 
+    public async Task<IWorkbookHandle> OpenWorkbookAsync()
+    {
+        var workbook = await Session.OpenWorkbookAsync(WorkbookPath);
+        _resources.Add(workbook);
+        return workbook;
+    }
+
+    public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) =>
+        _ownerWorkbook.GetQueryAsync(queryName, cancellationToken);
+
+    public Task<RangeData> ReadRangeAsync(string sheetName, string address, CancellationToken cancellationToken = default) =>
+        _ownerWorkbook.ReadRangeAsync(address, sheetName, cancellationToken);
+
     public Task<AttachedMutationApprovalGrantResult> GrantApprovalAsync(TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
         _approvalService.GrantAsync(WorkbookPath, ttl, cancellationToken);
 

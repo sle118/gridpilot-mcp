@@ -18,6 +18,20 @@ public sealed class LiveAttachedSessionSafetyTests
     }
 
     [AttachedLiveExcelFact]
+    public async Task AttachedSession_RangeRead_IsAllowedWithoutApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var range = await context.WorkbookService.ReadRangeAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemovedLoaded",
+            "A1:B2");
+
+        Assert.Equal("tbleWithErrorRemovedLoaded", range.SheetName);
+        Assert.Equal(2, range.Values.Count);
+    }
+
+    [AttachedLiveExcelFact]
     public async Task AttachedSession_MutatingRefresh_IsBlockedWithoutApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();
@@ -137,5 +151,57 @@ public sealed class LiveAttachedSessionSafetyTests
 
         Assert.False(refresh.Succeeded);
         Assert.Equal("shared_session_approval_expired", refresh.Error?.Code);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_QueryFormulaUpdate_FailsBeforeApproval_AndSucceedsAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var blocked = await context.WorkbookService.SetQueryFormulaAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemoved",
+            "let Source = #table({\"Value\"}, {{4321}}) in Source");
+
+        Assert.False(blocked.Succeeded);
+        Assert.Equal("shared_session_approval_required", blocked.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var updated = await context.WorkbookService.SetQueryFormulaAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemoved",
+            "let Source = #table({\"Value\"}, {{4321}}) in Source");
+
+        Assert.True(updated.Succeeded);
+        var query = await context.GetQueryAsync("tbleWithErrorRemoved");
+        Assert.Contains("4321", query.Formula, StringComparison.Ordinal);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_RangeWrite_FailsBeforeApproval_AndSucceedsAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        var request = new RangeWriteRequest(
+        [
+            new RangeWriteTarget("tbleWithErrorRemovedLoaded", "Z3:AA3", new object?[,] { { "alpha", "beta" } }),
+            new RangeWriteTarget("tbleWithErrorRemovedLoaded", "Z4:AA4", new object?[,] { { 30d, 40d } })
+        ]);
+
+        var blocked = await context.WorkbookService.WriteRangesAsync(context.WorkbookPath, request);
+        Assert.False(blocked.Succeeded);
+        Assert.Equal("shared_session_approval_required", blocked.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var written = await context.WorkbookService.WriteRangesAsync(context.WorkbookPath, request);
+        Assert.True(written.Succeeded);
+
+        var firstRow = await context.ReadRangeAsync("tbleWithErrorRemovedLoaded", "Z3:AA3");
+        var secondRow = await context.ReadRangeAsync("tbleWithErrorRemovedLoaded", "Z4:AA4");
+        Assert.Equal("alpha", firstRow.Values[1, 1]?.ToString());
+        Assert.Equal("beta", firstRow.Values[1, 2]?.ToString());
+        Assert.Equal(30d, Convert.ToDouble(secondRow.Values[1, 1]));
+        Assert.Equal(40d, Convert.ToDouble(secondRow.Values[1, 2]));
     }
 }

@@ -4,15 +4,15 @@
 
 1. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics now that attached mutation is lease-gated.
 2. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
-3. Choose the next single narrow workbook-edit surface to promote behind the same attached-session approval gate.
-4. Keep range read/write and query-formula editing internal until that next promoted surface is explicitly chosen.
+3. Decide whether the current rectangular range-write and query-edit surface should stay narrow or grow into a broader workbook patch workflow.
+4. Choose the next single higher-level workflow to promote behind the same attached-session approval gate, such as query authoring helpers or workbook patch operations.
 5. Package the next bounded work items into small backlog or delegation slices for future agents.
 
 ## Suggested first bounded implementation slice
 
-- unsafe-state detection refinement plus one next narrow attached-session workbook-edit capability
+- unsafe-state detection refinement plus one next higher-level workbook workflow on top of the new edit surface
 - mock-first tests plus opt-in live validation for the above
-- keep the remaining workbook edit/query edit tools internal in the same slice
+- keep broader workbook patching and formatting workflows out of scope in the same slice
 
 ## Cautions
 

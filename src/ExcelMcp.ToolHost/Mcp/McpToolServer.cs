@@ -109,6 +109,68 @@ public sealed class McpToolServer
                 required = new[] { "workbookPath", "pattern" }
             })),
         new(
+            ToolNames.QuerySetFormula,
+            "Set or replace a workbook query formula by name.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    queryName = new { type = "string" },
+                    formula = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "queryName", "formula" }
+            })),
+        new(
+            ToolNames.RangeRead,
+            "Read one rectangular workbook range from a specific worksheet.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    sheetName = new { type = "string" },
+                    address = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "sheetName", "address" }
+            })),
+        new(
+            ToolNames.RangeWrite,
+            "Write one or more rectangular workbook ranges.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    writes = new
+                    {
+                        type = "array",
+                        items = new
+                        {
+                            type = "object",
+                            properties = new
+                            {
+                                sheetName = new { type = "string" },
+                                address = new { type = "string" },
+                                values = new
+                                {
+                                    type = "array",
+                                    items = new
+                                    {
+                                        type = "array"
+                                    }
+                                }
+                            },
+                            required = new[] { "sheetName", "address", "values" }
+                        }
+                    }
+                },
+                required = new[] { "workbookPath", "writes" }
+            })),
+        new(
             ToolNames.AttachedSessionGrantMutation,
             "Grant a workbook-scoped attached-session mutation approval lease.",
             ToJsonElement(new
@@ -146,6 +208,9 @@ public sealed class McpToolServer
                 ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
                 ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
                 ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
+                ToolNames.QuerySetFormula => await HandleSetQueryFormulaAsync(arguments, cancellationToken),
+                ToolNames.RangeRead => await HandleRangeReadAsync(arguments, cancellationToken),
+                ToolNames.RangeWrite => await HandleRangeWriteAsync(arguments, cancellationToken),
                 ToolNames.AttachedSessionGrantMutation => await HandleGrantApprovalAsync(arguments, cancellationToken),
                 ToolNames.AttachedSessionRevokeMutation => await HandleRevokeApprovalAsync(arguments, cancellationToken),
                 _ => throw new McpToolInputException("invalid_tool", $"Unknown tool '{name}'.")
@@ -230,6 +295,38 @@ public sealed class McpToolServer
             cancellationToken);
     }
 
+    private async Task<object> HandleSetQueryFormulaAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var queryName = GetRequiredString(arguments, "queryName");
+        var formula = GetRequiredString(arguments, "formula");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.SetQueryFormulaAsync(workbookPath, queryName, formula, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleRangeReadAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        var address = GetRequiredString(arguments, "address");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.ReadRangeAsync(workbookPath, sheetName, address, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleRangeWriteAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var request = GetRangeWriteRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.WriteRangesAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
     private Task<object> HandleGrantApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
@@ -303,6 +400,95 @@ public sealed class McpToolServer
 
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
+
+    private static RangeWriteRequest GetRangeWriteRequest(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("writes", out var writesElement) ||
+            writesElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "Missing required array argument 'writes'.");
+        }
+
+        var writes = new List<RangeWriteTarget>();
+        foreach (var write in writesElement.EnumerateArray())
+        {
+            if (write.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each 'writes' item must be an object.");
+            }
+
+            var sheetName = GetRequiredString(write, "sheetName");
+            var address = GetRequiredString(write, "address");
+            if (!write.TryGetProperty("values", out var valuesElement))
+            {
+                throw new McpToolInputException("invalid_arguments", "Each range write must include 'values'.");
+            }
+
+            writes.Add(new RangeWriteTarget(sheetName, address, ParseMatrix(valuesElement)));
+        }
+
+        if (writes.Count == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one range write target is required.");
+        }
+
+        return new RangeWriteRequest(writes);
+    }
+
+    private static object?[,] ParseMatrix(JsonElement valuesElement)
+    {
+        if (valuesElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "'values' must be a rectangular array of arrays.");
+        }
+
+        var rows = valuesElement.EnumerateArray().ToArray();
+        if (rows.Length == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "'values' must contain at least one row.");
+        }
+
+        if (rows.Any(row => row.ValueKind != JsonValueKind.Array))
+        {
+            throw new McpToolInputException("invalid_arguments", "'values' must be a rectangular array of arrays.");
+        }
+
+        var columnCount = rows[0].GetArrayLength();
+        if (columnCount == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "'values' rows must contain at least one column.");
+        }
+
+        if (rows.Any(row => row.GetArrayLength() != columnCount))
+        {
+            throw new McpToolInputException("invalid_arguments", "'values' must be rectangular.");
+        }
+
+        var matrix = new object?[rows.Length, columnCount];
+        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        {
+            var cells = rows[rowIndex].EnumerateArray().ToArray();
+            for (var columnIndex = 0; columnIndex < columnCount; columnIndex++)
+            {
+                matrix[rowIndex, columnIndex] = ParseCellValue(cells[columnIndex]);
+            }
+        }
+
+        return matrix;
+    }
+
+    private static object? ParseCellValue(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number when element.TryGetInt64(out var intValue) => intValue,
+            JsonValueKind.Number => element.GetDouble(),
+            _ => throw new McpToolInputException("invalid_arguments", "Range write cell values must be scalars or null.")
+        };
 
     private static async Task<object> ExecuteAsObjectAsync<T>(Task<T> task) where T : class =>
         await task.ConfigureAwait(false);

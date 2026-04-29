@@ -29,12 +29,15 @@ Read-only operations currently include:
 
 - workbook inventory
 - query definition reads
+- range reads
 
 Mutating or diagnostic-write operations currently include:
 
 - targeted refresh
 - query probing
 - temp-query cleanup
+- query formula edits
+- range writes
 
 Future workbook write/edit operations should use the same safety seam.
 
@@ -91,6 +94,7 @@ This avoids hidden differences between tool callers and keeps workbook-close beh
 - it does not yet provide a lease/lock model for coordinated shared mutation
 - attached mutation approval is a trust/coordination mechanism, not an authentication system
 - the first approved attached mutation surface is still narrow and limited to refresh, probe, and temp-query cleanup
+- the approved attached mutation surface is still narrow and limited to refresh, probe, temp-query cleanup, query formula edits, and rectangular range writes
 - attached-session live validation is supported, but gated separately because workstation setup still determines whether the intended running workbook owner can be prepared cleanly for attachment
 
 ## Next design pressure
@@ -100,4 +104,4 @@ The next shared-session step should define:
 - explicit open/attach policy per tool or operation class
 - how the bridge should detect and report unsafe active-UI states beyond the current readiness/interactivity heuristics
 - whether the approval lease should evolve into a stronger coordination/lease model before broader workbook editing is exposed
-- which single workbook-edit surface should be promoted next under the same approval gate
+- whether the current rectangular range write model should stay narrow or grow into a broader workbook patch model

@@ -17,10 +17,12 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - targeted query refresh with structured success/failure results
 - diagnostic query probing via temp-query creation, preview load, and cleanup
 - temp-query cleanup with structured partial-failure reporting
-- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, and workbook-scoped approval leases for attached refresh, probe, and temp-query cleanup
-- a narrow MCP stdio host surface for inventory, query definition read, targeted refresh, probing, temp-query cleanup, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
+- query formula edit with structured success/failure results and bridge-owned save behavior
+- range read and multi-range write with bridge-side preflight validation and bridge-owned save behavior for successful writes
+- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, and workbook-scoped approval leases for attached refresh, probe, temp-query cleanup, query formula edit, and range write
+- a narrow MCP stdio host surface for inventory, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, range read, range write, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
 - an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, probing, and lease-gated attached-session mutation
-- a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory, pre-approval refusal, approved mutation, revoke, and approval expiry against a real running Excel instance
+- a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory and range reads, pre-approval refusal for workbook edits, approved mutation, revoke, and approval expiry against a real running Excel instance
 - branding assets now folded into `branding/assets/`
 
 ## Important naming note
@@ -43,7 +45,7 @@ The intended architecture remains:
 ## Immediate gaps
 
 - no broad concurrency/coordination support yet for safe agent work while a human is actively editing the same workbook
-- no broad attached-session workbook edit surface yet beyond refresh, probe, and temp-query cleanup
+- no broad attached-session workbook edit surface yet beyond query edits, range read/write, refresh, probe, and temp-query cleanup
 - no richer unsafe-UI detection yet beyond readiness/interactivity/calculation heuristics
-- no broad agent-facing workbook edit/range workflow surface yet beyond the narrow internal seams used by the harness
+- no broad workbook patching, formatting, or table-shape editing surface yet
 - no first backlog/delegation packet set yet

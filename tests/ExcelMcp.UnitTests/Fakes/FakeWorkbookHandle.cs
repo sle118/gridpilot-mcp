@@ -11,6 +11,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public int SaveCallCount { get; private set; }
     public List<(string QueryName, RefreshOptions? Options)> RefreshCalls { get; } = [];
     public List<(string QueryName, string Formula)> SetQueryFormulaCalls { get; } = [];
+    public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
+    public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
 
     public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
@@ -28,6 +30,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Func<string, RefreshOptions?, Task<RefreshResult>> OnRefreshAsync { get; set; } =
         (queryName, options) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
+
+    public Func<string, string?, Task<RangeData>> OnReadRangeAsync { get; set; } =
+        (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "value" } }));
+
+    public Func<string, object?[,], string?, Task> OnWriteRangeAsync { get; set; } =
+        (address, values, sheetName) => Task.CompletedTask;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task SaveAsync(CancellationToken cancellationToken = default)
@@ -53,6 +61,15 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     }
     public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => OnRunProbeAsync(request);
     public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => OnCleanupAsync(prefixOrPattern);
-    public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "value" } }));
-    public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ReadRangeCalls.Add((sheetName ?? "Sheet1", address));
+        return OnReadRangeAsync(address, sheetName);
+    }
+
+    public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        WriteRangeCalls.Add((sheetName ?? "Sheet1", address, values));
+        return OnWriteRangeAsync(address, values, sheetName);
+    }
 }

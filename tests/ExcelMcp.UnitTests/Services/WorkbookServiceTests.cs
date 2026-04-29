@@ -1,4 +1,5 @@
 using ExcelMcp.Bridge.Services;
+using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Results;
 using ExcelMcp.UnitTests.Fakes;
 
@@ -370,5 +371,248 @@ public sealed class WorkbookServiceTests
 
         Assert.Equal(1, result.DeletedCount);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetQueryFormulaAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.SetQueryFormulaAsync(@"C:\temp\book.xlsx", "SalesQuery", "let Source = 1 in Source");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("SalesQuery", result.QueryName);
+        var call = Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
+        Assert.Equal("SalesQuery", call.QueryName);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetQueryFormulaAsync_RequiresApprovalInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.SetQueryFormulaAsync(@"C:\temp\book.xlsx", "SalesQuery", "let Source = 1 in Source");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.SetQueryFormulaCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetQueryFormulaAsync_AllowsAttachedMutationWithApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var registry = new InMemoryAttachedMutationApprovalRegistry();
+        registry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, registry));
+
+        var result = await sut.SetQueryFormulaAsync(@"C:\temp\book.xlsx", "SalesQuery", "let Source = 1 in Source");
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetQueryFormulaAsync_DoesNotSaveOnFailure()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheet) => Task.FromResult(new RangeData(sheet ?? "Sheet1", address, new object?[,] { { "value" } }))
+        };
+        fakeWorkbook.OnWriteRangeAsync = (_, _, _) => Task.CompletedTask;
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        fakeWorkbook.SetQueryFormulaCalls.Clear();
+        var sut = new WorkbookService(session);
+        fakeWorkbook.OnGetQueryAsync = _ => Task.FromResult(new QueryDefinition("SalesQuery", ""));
+        fakeWorkbook.OnWriteRangeAsync = (_, _, _) => Task.CompletedTask;
+        fakeWorkbook.OnReadRangeAsync = (address, sheet) => Task.FromResult(new RangeData(sheet ?? "Sheet1", address, new object?[,] { { "value" } }));
+        fakeWorkbook.SetQueryFormulaCalls.Clear();
+        fakeWorkbook.OnGetQueryAsync = _ => throw new InvalidOperationException("unused");
+
+        fakeWorkbook.SetQueryFormulaCalls.Clear();
+        fakeWorkbook.OnReadRangeAsync = (address, sheet) => Task.FromResult(new RangeData(sheet ?? "Sheet1", address, new object?[,] { { "value" } }));
+
+        // Simulate a workbook-side formula update failure.
+        var failingWorkbook = new FakeWorkbookHandle();
+        failingWorkbook.OnReadRangeAsync = fakeWorkbook.OnReadRangeAsync;
+        failingWorkbook.OnWriteRangeAsync = fakeWorkbook.OnWriteRangeAsync;
+        var failingSession = new FakeExcelSession { Workbook = failingWorkbook };
+        var failingService = new WorkbookService(failingSession);
+        failingWorkbook.OnCleanupAsync = fakeWorkbook.OnCleanupAsync;
+        failingWorkbook.OnRunProbeAsync = fakeWorkbook.OnRunProbeAsync;
+        failingWorkbook.OnRefreshAsync = fakeWorkbook.OnRefreshAsync;
+        failingWorkbook.OnGetQueryAsync = fakeWorkbook.OnGetQueryAsync;
+        failingWorkbook.SetQueryFormulaCalls.Clear();
+        failingWorkbook.OnWriteRangeAsync = (_, _, _) => Task.CompletedTask;
+        failingWorkbook.OnReadRangeAsync = (address, sheet) => Task.FromResult(new RangeData(sheet ?? "Sheet1", address, new object?[,] { { "value" } }));
+        // Force failure via a derived delegate path.
+        failingWorkbook.OnGetQueryAsync = _ => Task.FromResult(new QueryDefinition("SalesQuery", ""));
+        failingWorkbook.SetQueryFormulaCalls.Clear();
+        failingWorkbook.OnReadRangeAsync = fakeWorkbook.OnReadRangeAsync;
+        failingWorkbook.OnWriteRangeAsync = fakeWorkbook.OnWriteRangeAsync;
+
+        // Replace workbook with one that throws on formula set by using the delegate-less fake and wrapping the service call.
+        var throwingWorkbook = new ThrowingFormulaWorkbookHandle();
+        var throwingSession = new FakeExcelSession { Workbook = throwingWorkbook };
+        var throwingService = new WorkbookService(throwingSession);
+
+        var result = await throwingService.SetQueryFormulaAsync(@"C:\temp\book.xlsx", "SalesQuery", "let Source = 1 in Source");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("query_formula_update_failed", result.Error?.Code);
+        Assert.Equal(0, throwingWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_ReturnsExpectedPayloadWithoutApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { 1, 2 }, { 3, 4 } }))
+        };
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.ReadRangeAsync(@"C:\temp\book.xlsx", "Sheet1", "A1:B2");
+
+        Assert.Equal("Sheet1", result.SheetName);
+        Assert.Equal("A1:B2", result.Address);
+        Assert.Equal(2, result.Values.Count);
+        Assert.Equal(4L, Convert.ToInt64(result.Values[1][1]));
+    }
+
+    [Fact]
+    public async Task WriteRangesAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null, null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeWriteRequest(
+        [
+            new RangeWriteTarget("Sheet1", "A1:B1", new object?[,] { { "A", "B" } }),
+            new RangeWriteTarget("Sheet1", "A2:B2", new object?[,] { { "C", "D" } })
+        ]);
+
+        var result = await sut.WriteRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.WriteCount);
+        Assert.Equal(2, fakeWorkbook.WriteRangeCalls.Count);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangesAsync_RequiresApprovalInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }))
+        };
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+        var request = new RangeWriteRequest([new RangeWriteTarget("Sheet1", "A1", new object?[,] { { "A" } })]);
+
+        var result = await sut.WriteRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeCalls);
+    }
+
+    [Fact]
+    public async Task WriteRangesAsync_AllowsAttachedMutationWithApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }))
+        };
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var registry = new InMemoryAttachedMutationApprovalRegistry();
+        registry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, registry));
+        var request = new RangeWriteRequest([new RangeWriteTarget("Sheet1", "A1", new object?[,] { { "A" } })]);
+
+        var result = await sut.WriteRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.WriteRangeCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangesAsync_FailsPreflightWithoutApplyingAnyWrites()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null, null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeWriteRequest([new RangeWriteTarget("Sheet1", "A1:B1", new object?[,] { { "A" } })]);
+
+        var result = await sut.WriteRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_write_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    private sealed class ThrowingFormulaWorkbookHandle : IWorkbookHandle
+    {
+        public string Name => "fake.xlsx";
+        public string FullPath => @"C:\temp\fake.xlsx";
+        public int SaveCallCount { get; private set; }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public Task SaveAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SheetSummary>>(Array.Empty<SheetSummary>());
+        public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TableSummary>>(Array.Empty<TableSummary>());
+        public Task<IReadOnlyList<QuerySummary>> ListQueriesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<QuerySummary>>(Array.Empty<QuerySummary>());
+        public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ConnectionSummary>>(Array.Empty<ConnectionSummary>());
+        public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, string.Empty));
+        public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default) => throw new InvalidOperationException("boom");
+        public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
+        public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
+        public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => Task.FromResult(new CleanupResult(0, Array.Empty<string>()));
+        public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
+        public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

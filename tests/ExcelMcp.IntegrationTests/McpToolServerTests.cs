@@ -38,6 +38,9 @@ public sealed class McpToolServerTests
                 ToolNames.QueryRefresh,
                 ToolNames.QueryRunProbe,
                 ToolNames.QueryCleanupTemp,
+                ToolNames.QuerySetFormula,
+                ToolNames.RangeRead,
+                ToolNames.RangeWrite,
                 ToolNames.AttachedSessionGrantMutation,
                 ToolNames.AttachedSessionRevokeMutation
             },
@@ -145,6 +148,100 @@ public sealed class McpToolServerTests
         Assert.Equal(@"C:\temp\book.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
         Assert.Equal(15, (int)(DateTimeOffset.Parse(result.StructuredContent.GetProperty("expiresAtUtc").GetString()!) -
                                DateTimeOffset.Parse(result.StructuredContent.GetProperty("grantedAtUtc").GetString()!)).TotalMinutes);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_QuerySetFormula_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.QuerySetFormula,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery",
+                formula = "let Source = 1 in Source"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("SalesQuery", result.StructuredContent.GetProperty("queryName").GetString());
+        Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeRead_ReturnsStructuredValues()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeRead,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet1",
+                address = "A1"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Equal("A1", result.StructuredContent.GetProperty("address").GetString());
+        Assert.Equal("value", result.StructuredContent.GetProperty("values")[0][0].GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeWrite_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.ReadRangeCalls.Clear();
+        var server = CreateServer(fakeWorkbook);
+        fakeWorkbook.ReadRangeCalls.Clear();
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeWrite,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1:B1", values = new object?[][] { new object?[] { "A", "B" } } },
+                    new { sheetName = "Sheet1", address = "A2:B2", values = new object?[][] { new object?[] { "C", "D" } } }
+                }
+            }));
+
+        if (result.IsError)
+        {
+            throw new Xunit.Sdk.XunitException(result.StructuredContent.ToString());
+        }
+
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(2, result.StructuredContent.GetProperty("writeCount").GetInt32());
+        Assert.Equal(2, fakeWorkbook.WriteRangeCalls.Count);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeWrite_ReturnsStructuredErrorForMalformedValues()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeWrite,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1:B2", values = new object?[][] { new object?[] { "A" }, new object?[] { "B", "C" } } }
+                }
+            }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]
