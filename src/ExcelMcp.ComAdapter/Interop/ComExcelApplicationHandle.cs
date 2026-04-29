@@ -17,22 +17,15 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         _ownsApplication = ownsApplication;
     }
 
-    public static ComExcelApplicationHandle AttachToRunningInstance()
+    public static ComExcelApplicationHandle AttachToRunningInstance(SessionAttachTarget target)
     {
-        var applicationType = Type.GetTypeFromProgID("Excel.Application")
-            ?? throw new InvalidOperationException("Excel.Application COM progid is not available.");
+        ArgumentNullException.ThrowIfNull(target);
 
-        try
+        return target.Mode switch
         {
-            var application = Microsoft.VisualBasic.Interaction.GetObject(null, "Excel.Application");
-            return new ComExcelApplicationHandle(
-                application ?? throw new InvalidOperationException("Excel returned a null application handle."),
-                ownsApplication: false);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("Unable to attach to a running Excel instance.", ex);
-        }
+            SessionAttachTargetMode.WorkbookOwner => AttachToWorkbookOwnerInstance(target.WorkbookPath!),
+            _ => AttachToAnyRunningInstance()
+        };
     }
 
     public static ComExcelApplicationHandle CreateNew(bool visible = false)
@@ -114,10 +107,33 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         var workbooks = ComDispatch.GetProperty<object>(_application, "Workbooks");
         try
         {
-            var workbook = ComDispatch.InvokeMethod(workbooks, "Open", path)
+            var normalizedPath = NormalizePath(path);
+            foreach (var workbookObject in ComDispatch.Enumerate(workbooks))
+            {
+                var workbook = workbookObject;
+                var keepWorkbook = false;
+                try
+                {
+                    var fullName = ReadWorkbookFullName(workbook);
+                    if (string.Equals(fullName, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        keepWorkbook = true;
+                        return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(workbook, closeOnDispose: false));
+                    }
+                }
+                finally
+                {
+                    if (!keepWorkbook)
+                    {
+                        ComDispatch.ReleaseIfComObject(workbook);
+                    }
+                }
+            }
+
+            var openedWorkbook = ComDispatch.InvokeMethod(workbooks, "Open", path)
                 ?? throw new InvalidOperationException($"Excel did not return a workbook for '{path}'.");
 
-            return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(workbook));
+            return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(openedWorkbook));
         }
         finally
         {
@@ -231,5 +247,81 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
             2 => ExcelCalculationState.Pending,
             _ => ExcelCalculationState.Unknown
         };
+    }
+
+    private static ComExcelApplicationHandle AttachToAnyRunningInstance()
+    {
+        var applicationType = Type.GetTypeFromProgID("Excel.Application")
+            ?? throw new InvalidOperationException("Excel.Application COM progid is not available.");
+
+        try
+        {
+            var application = Microsoft.VisualBasic.Interaction.GetObject(null, "Excel.Application");
+            if (application is null)
+            {
+                throw new ExcelSessionTargetException(
+                    "attach_target_no_running_instance",
+                    "No running Excel instance was available for generic attachment.");
+            }
+
+            return new ComExcelApplicationHandle(application, ownsApplication: false);
+        }
+        catch (ExcelSessionTargetException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new ExcelSessionTargetException(
+                "attach_target_no_running_instance",
+                "Unable to attach to a running Excel instance.",
+                "Start Excel first or switch the host to create-new session mode.",
+                ex);
+        }
+    }
+
+    private static ComExcelApplicationHandle AttachToWorkbookOwnerInstance(string workbookPath)
+    {
+        var candidates = RunningWorkbookObjectTable.FindWorkbookOwnerApplications(workbookPath);
+        if (candidates.Count == 0)
+        {
+            throw new ExcelSessionTargetException(
+                "attach_target_no_matching_instance",
+                $"No running Excel instance currently has workbook '{NormalizePath(workbookPath)}' open.",
+                "Open the workbook in Excel first, or switch the host to create-new or any-running attach mode.");
+        }
+
+        if (candidates.Count > 1)
+        {
+            foreach (var candidate in candidates)
+            {
+                ComDispatch.ReleaseIfComObject(candidate);
+            }
+
+            throw new ExcelSessionTargetException(
+                "attach_target_multiple_matching_instances",
+                $"Multiple running Excel instances appear to have workbook '{NormalizePath(workbookPath)}' open.",
+                "Close duplicate workbook instances or choose a less ambiguous attachment mode.");
+        }
+
+        return new ComExcelApplicationHandle(candidates[0], ownsApplication: false);
+    }
+
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch (Exception)
+        {
+            return path;
+        }
+    }
+
+    private static string ReadWorkbookFullName(object workbook)
+    {
+        var fullName = ComDispatch.GetProperty<string>(workbook, "FullName");
+        return NormalizePath(fullName);
     }
 }

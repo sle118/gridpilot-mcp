@@ -197,6 +197,18 @@ public sealed class ComWorkbookHandleTests
         Assert.False(failing.Deleted);
     }
 
+    [Fact]
+    public async Task DisposeAsync_DoesNotCloseBorrowedWorkbookHandle()
+    {
+        var workbook = new FakeWorkbookComObject();
+        await using (var sut = new ComWorkbookHandle(workbook, closeOnDispose: false))
+        {
+            _ = sut.Name;
+        }
+
+        Assert.Equal(0, workbook.CloseCallCount);
+    }
+
     private sealed class FakeWorkbookComObject
     {
         public string Name { get; init; } = "fake.xlsx";
@@ -205,9 +217,11 @@ public sealed class ComWorkbookHandleTests
         public List<FakeQueryComObject> QueryItems { get; init; } = [];
         public IEnumerable<FakeQueryComObject> Queries => QueryItems.Where(query => !query.Deleted);
         public List<FakeConnectionComObject> Connections { get; init; } = [];
+        public int CloseCallCount { get; private set; }
 
         public void Close(bool saveChanges)
         {
+            CloseCallCount++;
         }
     }
 

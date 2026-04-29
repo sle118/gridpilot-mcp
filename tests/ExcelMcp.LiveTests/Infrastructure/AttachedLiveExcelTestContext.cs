@@ -1,5 +1,6 @@
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.ComAdapter;
+using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using System.Runtime.Versioning;
 namespace ExcelMcp.LiveTests.Infrastructure;
@@ -38,25 +39,14 @@ internal sealed class AttachedLiveExcelTestContext : IAsyncDisposable
         ExcelApplicationSession attachedSession;
         try
         {
-            attachedSession = ExcelApplicationSession.AttachToRunning();
+            attachedSession = ExcelApplicationSession.AttachToRunning(SessionAttachTarget.ForWorkbook(workbookPath));
         }
-        catch (InvalidOperationException ex)
+        catch (ExcelSessionTargetException ex)
         {
             await ownerWorkbook.DisposeAsync();
             await ownerSession.DisposeAsync();
             DeleteTempWorkbookWithRetry(workbookPath);
-            throw Xunit.Sdk.SkipException.ForSkip($"Attached-session live tests require a usable running Excel attachment target: {ex.Message}");
-        }
-
-        var attachedWorkbooks = await attachedSession.ListOpenWorkbooksAsync();
-        if (!attachedWorkbooks.Any(workbook =>
-                string.Equals(Path.GetFullPath(workbook.FullPath), Path.GetFullPath(workbookPath), StringComparison.OrdinalIgnoreCase)))
-        {
-            await ownerWorkbook.DisposeAsync();
-            await ownerSession.DisposeAsync();
-            await attachedSession.DisposeAsync();
-            DeleteTempWorkbookWithRetry(workbookPath);
-            throw Xunit.Sdk.SkipException.ForSkip("Attached-session live tests require attaching to the isolated test Excel instance. Close other running Excel sessions and retry.");
+            throw Xunit.Sdk.SkipException.ForSkip($"Attached-session live tests require a usable workbook-targeted Excel attachment: {ex.Message}");
         }
 
         return new AttachedLiveExcelTestContext(workbookPath, ownerSession, ownerWorkbook, attachedSession);

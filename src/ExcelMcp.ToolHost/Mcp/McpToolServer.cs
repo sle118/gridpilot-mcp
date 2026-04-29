@@ -2,6 +2,7 @@ using ExcelMcp.Bridge.Contracts;
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core;
 using System.Text.Json;
+using ExcelMcp.ToolHost;
 
 namespace ExcelMcp.ToolHost.Mcp;
 
@@ -12,11 +13,16 @@ public sealed class McpToolServer
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private readonly WorkbookService _workbookService;
+    private readonly IWorkbookServiceResolver _workbookServices;
+
+    internal McpToolServer(IWorkbookServiceResolver workbookServices)
+    {
+        _workbookServices = workbookServices;
+    }
 
     public McpToolServer(WorkbookService workbookService)
+        : this(new SharedWorkbookServiceResolver(workbookService))
     {
-        _workbookService = workbookService;
     }
 
     public McpInitializeResult Initialize(string? requestedProtocolVersion)
@@ -127,6 +133,10 @@ public sealed class McpToolServer
         {
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer)));
         }
+        catch (ExcelSessionTargetException ex)
+        {
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
+        }
         catch (Exception ex)
         {
             return BuildErrorResult(new McpToolError("tool_call_failed", ex.Message, ex.InnerException?.Message, nameof(McpToolServer)));
@@ -136,14 +146,20 @@ public sealed class McpToolServer
     private async Task<object> HandleListInventoryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
-        return await _workbookService.ListInventoryAsync(workbookPath, cancellationToken);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.ListInventoryAsync(workbookPath, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<object> HandleGetQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
         var queryName = GetRequiredString(arguments, "queryName");
-        return await _workbookService.GetQueryAsync(workbookPath, queryName, cancellationToken);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.GetQueryAsync(workbookPath, queryName, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<object> HandleRefreshAsync(JsonElement arguments, CancellationToken cancellationToken)
@@ -155,7 +171,10 @@ public sealed class McpToolServer
             PreferSynchronousTableRefresh: GetOptionalBoolean(arguments, "preferSynchronousTableRefresh") ?? true,
             Timeout: GetOptionalInt32(arguments, "timeoutMs") is int timeoutMs ? TimeSpan.FromMilliseconds(timeoutMs) : null);
 
-        return await _workbookService.RefreshQueryAsync(workbookPath, queryName, options, cancellationToken);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.RefreshQueryAsync(workbookPath, queryName, options, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<object> HandleProbeAsync(JsonElement arguments, CancellationToken cancellationToken)
@@ -163,14 +182,20 @@ public sealed class McpToolServer
         var workbookPath = GetRequiredString(arguments, "workbookPath");
         var queryName = GetRequiredString(arguments, "queryName");
         var tempPrefix = GetOptionalString(arguments, "tempPrefix") ?? "tmp_probe_mcp";
-        return await _workbookService.TryRunQueryAsync(workbookPath, queryName, tempPrefix, cancellationToken);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.TryRunQueryAsync(workbookPath, queryName, tempPrefix, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<object> HandleCleanupAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
         var pattern = GetRequiredString(arguments, "pattern");
-        return await _workbookService.CleanupTempQueriesAsync(workbookPath, pattern, cancellationToken);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.CleanupTempQueriesAsync(workbookPath, pattern, cancellationToken),
+            cancellationToken);
     }
 
     private static bool IsErrorResult(JsonElement result) =>
@@ -239,5 +264,18 @@ public sealed class McpToolServer
             Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(payload, JsonOptions) } },
             StructuredContent: structuredJson,
             IsError: true);
+    }
+
+    private sealed class SharedWorkbookServiceResolver : IWorkbookServiceResolver
+    {
+        private readonly WorkbookService _workbookService;
+
+        public SharedWorkbookServiceResolver(WorkbookService workbookService)
+        {
+            _workbookService = workbookService;
+        }
+
+        public Task<T> ExecuteAsync<T>(string workbookPath, Func<WorkbookService, Task<T>> action, CancellationToken cancellationToken = default) =>
+            action(_workbookService);
     }
 }

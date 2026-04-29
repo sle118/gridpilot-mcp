@@ -12,11 +12,13 @@ namespace ExcelMcp.ComAdapter.Interop;
 internal sealed class ComWorkbookHandle : IWorkbookHandle
 {
     private readonly object _workbook;
+    private readonly bool _closeOnDispose;
     private bool _closed;
 
-    public ComWorkbookHandle(object workbook)
+    public ComWorkbookHandle(object workbook, bool closeOnDispose = true)
     {
         _workbook = workbook;
+        _closeOnDispose = closeOnDispose;
     }
 
     public string Name => ComDispatch.GetProperty<string>(_workbook, "Name");
@@ -27,6 +29,13 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
     {
         if (_closed)
         {
+            ComDispatch.ReleaseIfComObject(_workbook);
+            return ValueTask.CompletedTask;
+        }
+
+        if (!_closeOnDispose)
+        {
+            _closed = true;
             ComDispatch.ReleaseIfComObject(_workbook);
             return ValueTask.CompletedTask;
         }

@@ -17,9 +17,10 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - targeted query refresh with structured success/failure results
 - diagnostic query probing via temp-query creation, preview load, and cleanup
 - temp-query cleanup with structured partial-failure reporting
-- a conservative shared-session safety seam with session diagnostics, attached-session refusal codes, and blocked mutation in attached mode
+- a conservative shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, distinct attach-target/refusal codes, and blocked mutation in attached mode
 - a first narrow MCP stdio host surface for inventory, query definition read, targeted refresh, probing, and temp-query cleanup, plus structured host-side argument and invocation errors
 - an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, and probing
+- a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory, and conservative mutation refusal against a real running Excel instance
 - branding assets now folded into `branding/assets/`
 
 ## Important naming note
@@ -42,7 +43,7 @@ The intended architecture remains:
 ## Immediate gaps
 
 - no broad concurrency/coordination support yet for safe agent work while a human is actively editing the same workbook
-- no positive attached-session mutation support yet, even when the session appears otherwise safe
+- no positive attached-session mutation support yet, even when workbook-aware attachment succeeds and the session appears otherwise safe
 - no richer unsafe-UI detection yet beyond readiness/interactivity/calculation heuristics
 - no broad agent-facing workbook edit/range workflow surface yet beyond the narrow internal seams used by the harness
 - no first backlog/delegation packet set yet

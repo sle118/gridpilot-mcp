@@ -29,6 +29,36 @@ public sealed class LiveAttachedSessionSafetyTests
 
         Assert.False(refresh.Succeeded);
         Assert.NotNull(refresh.Error);
-        Assert.Equal("shared_session_workbook_open", refresh.Error!.Code);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", refresh.Error!.Code);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Probe_IsBlockedWhenWorkbookIsAlreadyOpen()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var probe = await context.WorkbookService.TryRunQueryAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemovedLoaded",
+            "tmp_probe");
+
+        Assert.False(probe.Succeeded);
+        Assert.NotNull(probe.Error);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", probe.Error!.Code);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Cleanup_IsBlockedWhenWorkbookIsAlreadyOpen()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var cleanup = await context.WorkbookService.CleanupTempQueriesAsync(
+            context.WorkbookPath,
+            "tmp_probe");
+
+        Assert.Equal(0, cleanup.DeletedCount);
+        Assert.NotNull(cleanup.Errors);
+        Assert.Single(cleanup.Errors);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", cleanup.Errors[0].Code);
     }
 }

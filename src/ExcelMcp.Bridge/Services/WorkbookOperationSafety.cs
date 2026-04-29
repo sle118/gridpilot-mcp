@@ -34,9 +34,9 @@ public sealed class WorkbookOperationSafety
             if (openWorkbook is not null)
             {
                 return new OperationError(
-                    Code: "shared_session_workbook_open",
-                    Message: $"Operation '{GetOperationLabel(intent)}' is blocked because workbook '{openWorkbook.Name}' is already open in the attached Excel session.",
-                    Detail: "Read-only inventory and query-definition operations are allowed, but mutating actions require an exclusive-safe workbook state.",
+                    Code: "shared_session_workbook_owned_in_attached_session",
+                    Message: $"Operation '{GetOperationLabel(intent)}' is blocked because workbook '{openWorkbook.Name}' is already owned by the attached Excel session.",
+                    Detail: "Read-only inventory and query-definition operations are allowed, but mutating actions remain blocked when the bridge is attached to a live user-owned workbook session.",
                     Source: nameof(WorkbookOperationSafety));
             }
         }

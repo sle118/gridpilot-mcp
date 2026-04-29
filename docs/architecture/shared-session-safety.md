@@ -11,11 +11,19 @@ Two session modes are relevant:
 - `create-new`: the host creates a dedicated hidden Excel instance for bridge work
 - `attach`: the host attaches to an already-running Excel instance
 
+Within `attach` mode, the host now supports two targeting strategies:
+
+- `workbook-owner`: prefer the running Excel instance that already owns the requested workbook path
+- `any-running`: attach to any running Excel instance when workbook-aware targeting is not required
+
+The default host behavior is `workbook-owner`, because the current MCP tool surface always includes a workbook path.
+
 The current policy is deliberately conservative:
 
 - read-only operations are allowed in either mode
-- mutating operations are blocked when the target workbook is already open in the attached session
+- mutating operations are blocked when the target workbook is already owned by the attached session
 - the bridge does not silently attach to an already-open user workbook and mutate it
+- workbook-aware attached acquisition refuses to guess when zero or multiple candidate running instances match the requested workbook path
 
 Read-only operations currently include:
 
@@ -43,10 +51,19 @@ This keeps COM-specific workbook discovery inside the adapter and keeps policy d
 
 Current refusal codes are intentionally distinct:
 
-- `shared_session_workbook_open`
+- `attach_target_no_running_instance`
+- `attach_target_no_matching_instance`
+- `attach_target_multiple_matching_instances`
+- `shared_session_workbook_owned_in_attached_session`
 - `shared_session_ui_unsafe`
 - `shared_session_busy`
 - `shared_session_attach_mutation_unsupported`
+
+When the bridge borrows a workbook that is already open inside an attached Excel instance, the workbook handle is treated as borrowed rather than owned:
+
+- read operations may reuse the existing workbook object
+- disposing the borrowed handle does not close the user-owned workbook
+- mutating operations are still blocked by policy unless a future slice explicitly allows them
 
 ## Save expectations
 
@@ -62,8 +79,8 @@ This avoids hidden differences between tool callers and keeps workbook-close beh
 
 - the current unsafe-state detection is still heuristic and relies on Excel readiness, interactivity, and calculation state rather than richer UI inspection
 - it does not yet provide a lease/lock model for coordinated shared mutation
-- `attach` mode is still read-heavy today, because mutation remains blocked even when the workbook is not already open if the session is merely attached
-- attached-session live validation is supported, but gated separately because COM attachment to the intended running Excel instance is workstation-sensitive
+- `attach` mode is still read-heavy today, because mutation remains blocked even when workbook-aware attachment succeeds and the session otherwise appears safe
+- attached-session live validation is supported, but gated separately because workstation setup still determines whether the intended running workbook owner can be prepared cleanly for attachment
 
 ## Next design pressure
 

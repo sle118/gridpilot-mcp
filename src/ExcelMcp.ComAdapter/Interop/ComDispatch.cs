@@ -139,7 +139,7 @@ internal static class ComDispatch
     {
         if (value is not null && Marshal.IsComObject(value))
         {
-            Marshal.FinalReleaseComObject(value);
+            Marshal.ReleaseComObject(value);
         }
     }
 }

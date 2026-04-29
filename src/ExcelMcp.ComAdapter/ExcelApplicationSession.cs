@@ -17,8 +17,8 @@ public sealed class ExcelApplicationSession : IExcelSession
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    public static ExcelApplicationSession AttachToRunning() =>
-        new(ComExcelApplicationHandle.AttachToRunningInstance());
+    public static ExcelApplicationSession AttachToRunning(SessionAttachTarget? target = null) =>
+        new(ComExcelApplicationHandle.AttachToRunningInstance(target ?? SessionAttachTarget.AnyRunningInstance));
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static ExcelApplicationSession CreateNew(bool visible = false) =>

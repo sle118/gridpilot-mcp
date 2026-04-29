@@ -54,6 +54,30 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task ListInventoryAsync_AllowsReadOnlyAccessInAttachedSession()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            Queries = [new QuerySummary("SalesQuery", true, false, "let Source = 1 in Source")]
+        };
+
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, false, false, ExcelCalculationState.Pending),
+            OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", true)]
+        };
+
+        var sut = new WorkbookService(session);
+
+        var inventory = await sut.ListInventoryAsync(@"C:\temp\book.xlsx");
+
+        Assert.Single(inventory.Queries);
+        Assert.Empty(session.PushedOptions);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
     public async Task TryRunQueryAsync_UsesGeneratedTempNameWithPrefix()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -144,7 +168,7 @@ public sealed class WorkbookServiceTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_workbook_open", result.Error!.Code);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", result.Error!.Code);
         Assert.Empty(fakeWorkbook.RefreshCalls);
         Assert.Empty(session.PushedOptions);
     }
@@ -251,7 +275,7 @@ public sealed class WorkbookServiceTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_workbook_open", result.Error!.Code);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", result.Error!.Code);
         Assert.Empty(session.PushedOptions);
     }
 
@@ -273,7 +297,7 @@ public sealed class WorkbookServiceTests
         var errors = result.Errors;
         Assert.NotNull(errors);
         Assert.Single(errors);
-        Assert.Equal("shared_session_workbook_open", errors[0].Code);
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", errors[0].Code);
         Assert.Equal(0, fakeWorkbook.SaveCallCount);
     }
 }

@@ -2,6 +2,8 @@ using ExcelMcp.Bridge.Contracts;
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.IntegrationTests.Fakes;
+using ExcelMcp.Core;
+using ExcelMcp.ToolHost;
 using ExcelMcp.ToolHost.Mcp;
 using System.Text.Json;
 
@@ -79,7 +81,7 @@ public sealed class McpToolServerTests
 
         Assert.True(result.IsError);
         Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
-        Assert.Equal("shared_session_workbook_open", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+        Assert.Equal("shared_session_workbook_owned_in_attached_session", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]
@@ -108,9 +110,40 @@ public sealed class McpToolServerTests
         Assert.Equal("invalid_tool", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsStructuredErrorForAttachTargetFailure()
+    {
+        var server = new McpToolServer(new ThrowingWorkbookServiceResolver(
+            new ExcelSessionTargetException(
+                "attach_target_no_matching_instance",
+                "No running Excel instance currently has workbook open.",
+                "Open the workbook first.")));
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorkbookListInventory,
+            JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\book.xlsx" }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("attach_target_no_matching_instance", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+        Assert.Equal("Open the workbook first.", result.StructuredContent.GetProperty("error").GetProperty("detail").GetString());
+    }
+
     private static McpToolServer CreateServer(FakeWorkbookHandle? workbook = null)
     {
         var fakeSession = new FakeExcelSession { Workbook = workbook ?? new FakeWorkbookHandle() };
         return new McpToolServer(new WorkbookService(fakeSession));
+    }
+
+    private sealed class ThrowingWorkbookServiceResolver : IWorkbookServiceResolver
+    {
+        private readonly Exception _exception;
+
+        public ThrowingWorkbookServiceResolver(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task<T> ExecuteAsync<T>(string workbookPath, Func<WorkbookService, Task<T>> action, CancellationToken cancellationToken = default) =>
+            Task.FromException<T>(_exception);
     }
 }

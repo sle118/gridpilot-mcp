@@ -1,6 +1,4 @@
 using ExcelMcp.Bridge.Services;
-using ExcelMcp.ComAdapter;
-using ExcelMcp.Core.Abstractions;
 using ExcelMcp.ToolHost.Mcp;
 
 namespace ExcelMcp.ToolHost;
@@ -25,15 +23,9 @@ public static class Program
 
         try
         {
-            await using IExcelSession session = options.SessionMode switch
-            {
-                SessionMode.Attach => ExcelApplicationSession.AttachToRunning(),
-                _ => ExcelApplicationSession.CreateNew(options.Visible)
-            };
-
-            var workbookService = new WorkbookService(session);
+            await using var workbookServices = await WorkbookServiceResolver.CreateAsync(options);
             var server = new StdioMcpServer(
-                new McpToolServer(workbookService),
+                new McpToolServer(workbookServices),
                 Console.OpenStandardInput(),
                 Console.OpenStandardOutput());
 
