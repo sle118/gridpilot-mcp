@@ -25,8 +25,27 @@ internal static class ComDispatch
         var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
         if (property is null)
         {
-            value = null;
-            return false;
+            try
+            {
+                value = target.GetType().InvokeMember(
+                    propertyName,
+                    BindingFlags.GetProperty,
+                    binder: null,
+                    target,
+                    args: null);
+
+                return true;
+            }
+            catch (MissingMethodException)
+            {
+                value = null;
+                return false;
+            }
+            catch (COMException)
+            {
+                value = null;
+                return false;
+            }
         }
 
         value = property.GetValue(target);
@@ -79,8 +98,27 @@ internal static class ComDispatch
             }
         }
 
-        value = null;
-        return false;
+        try
+        {
+            value = target.GetType().InvokeMember(
+                methodName,
+                BindingFlags.InvokeMethod,
+                binder: null,
+                target,
+                args);
+
+            return true;
+        }
+        catch (MissingMethodException)
+        {
+            value = null;
+            return false;
+        }
+        catch (COMException)
+        {
+            value = null;
+            return false;
+        }
     }
 
     public static IEnumerable Enumerate(object target) => (IEnumerable)target;

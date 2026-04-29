@@ -4,8 +4,8 @@
 
 1. Add targeted refresh primitives over the new workbook and query seams.
 2. Implement query probing behavior without widening the MCP surface prematurely.
-3. Decide whether workbook open/attach behavior needs additional policy before broader tool-surface work.
-4. Add optional live Excel harness conventions.
+3. Expand the live Excel harness to validate refresh and probing behavior once those slices land.
+4. Decide whether workbook open/attach behavior needs additional policy before broader tool-surface work.
 
 ## Suggested first bounded implementation slice
 

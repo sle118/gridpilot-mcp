@@ -228,6 +228,7 @@ public sealed class ComWorkbookHandleTests
 
     private sealed class FakeRangeComObject(string address)
     {
+        public string Address() => address;
         public string Address(bool rowAbsolute, bool columnAbsolute) => address;
     }
 

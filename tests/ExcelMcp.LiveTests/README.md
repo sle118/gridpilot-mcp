@@ -9,3 +9,7 @@ Live tests must remain:
 - excluded from normal CI
 - explicit about workbook fixture setup and cleanup
 - careful to restore Excel application state after execution
+
+The tracked baseline fixture now lives at `tests/live/fixtures/test_workbook.xlsx`.
+
+Tests must copy that workbook to a throwaway temp file before opening it in Excel. Never run live tests directly against the tracked fixture.

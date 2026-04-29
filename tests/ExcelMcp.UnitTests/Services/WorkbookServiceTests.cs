@@ -52,4 +52,23 @@ public sealed class WorkbookServiceTests
         Assert.Equal("SalesQuery", captured!.TargetQueryName);
         Assert.StartsWith("tmp_probe_SalesQuery_", captured.TempQueryName, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task CleanupTempQueriesAsync_SavesWorkbookWhenQueriesWereDeleted()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnCleanupAsync = _ => Task.FromResult(new CleanupResult(
+            DeletedCount: 2,
+            DeletedNames: ["tmp_probe_one", "tmp_probe_two"],
+            FailedNames: Array.Empty<string>(),
+            Errors: Array.Empty<OperationError>()));
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CleanupTempQueriesAsync("C:/temp/book.xlsx", "tmp_probe_");
+
+        Assert.Equal(2, result.DeletedCount);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
 }

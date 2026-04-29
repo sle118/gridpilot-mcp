@@ -8,6 +8,7 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 {
     public string Name => "fake.xlsx";
     public string FullPath => @"C:\temp\fake.xlsx";
+    public int SaveCallCount { get; private set; }
 
     public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
@@ -24,7 +25,11 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         pattern => Task.FromResult(new CleanupResult(0, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<OperationError>()));
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    public Task SaveAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task SaveAsync(CancellationToken cancellationToken = default)
+    {
+        SaveCallCount++;
+        return Task.CompletedTask;
+    }
     public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Sheets);
     public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Tables);

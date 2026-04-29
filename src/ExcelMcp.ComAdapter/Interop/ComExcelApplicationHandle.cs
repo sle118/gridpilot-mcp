@@ -8,11 +8,13 @@ namespace ExcelMcp.ComAdapter.Interop;
 internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
 {
     private readonly object _application;
+    private readonly bool _ownsApplication;
     private bool _disposed;
 
-    private ComExcelApplicationHandle(object application)
+    private ComExcelApplicationHandle(object application, bool ownsApplication)
     {
         _application = application;
+        _ownsApplication = ownsApplication;
     }
 
     public static ComExcelApplicationHandle AttachToRunningInstance()
@@ -23,7 +25,9 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         try
         {
             var application = Microsoft.VisualBasic.Interaction.GetObject(null, "Excel.Application");
-            return new ComExcelApplicationHandle(application ?? throw new InvalidOperationException("Excel returned a null application handle."));
+            return new ComExcelApplicationHandle(
+                application ?? throw new InvalidOperationException("Excel returned a null application handle."),
+                ownsApplication: false);
         }
         catch (Exception ex)
         {
@@ -39,7 +43,7 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         var application = Activator.CreateInstance(applicationType)
             ?? throw new InvalidOperationException("Unable to create a new Excel.Application COM instance.");
 
-        var handle = new ComExcelApplicationHandle(application);
+        var handle = new ComExcelApplicationHandle(application, ownsApplication: true);
         ComDispatch.SetProperty(application, "Visible", visible);
         return handle;
     }
@@ -167,7 +171,18 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         }
 
         _disposed = true;
-        ComDispatch.ReleaseIfComObject(_application);
+        try
+        {
+            if (_ownsApplication)
+            {
+                ComDispatch.TryInvokeMethod(_application, "Quit", out _);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(_application);
+        }
+
         return ValueTask.CompletedTask;
     }
 

@@ -53,6 +53,12 @@ public sealed class WorkbookService
     public async Task<CleanupResult> CleanupTempQueriesAsync(string workbookPath, string pattern, CancellationToken cancellationToken = default)
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
-        return await workbook.CleanupTempQueriesAsync(pattern, cancellationToken);
+        var result = await workbook.CleanupTempQueriesAsync(pattern, cancellationToken);
+        if (result.DeletedCount > 0)
+        {
+            await workbook.SaveAsync(cancellationToken);
+        }
+
+        return result;
     }
 }

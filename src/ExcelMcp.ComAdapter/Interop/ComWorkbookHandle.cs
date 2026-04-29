@@ -194,7 +194,36 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             ComDispatch.ReleaseIfComObject(query);
         }
     }
-    public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default) => throw NotYetImplemented();
+    public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var existingQuery = FindQueryByName(queryName);
+        if (existingQuery is not null)
+        {
+            try
+            {
+                ComDispatch.SetProperty(existingQuery, "Formula", formula);
+                return Task.CompletedTask;
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(existingQuery);
+            }
+        }
+
+        var queries = GetCollection(_workbook, "Queries");
+        try
+        {
+            var created = ComDispatch.InvokeMethod(queries, "Add", queryName, formula);
+            ComDispatch.ReleaseIfComObject(created);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(queries);
+        }
+    }
     public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => throw NotYetImplemented();
     public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => throw NotYetImplemented();
     public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default)
@@ -266,7 +295,7 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
                         {
                             yield return new TableSummary(
                                 SheetName: sheetName,
-                                TableName: GetStringProperty(table, "Name"),
+                                TableName: ComDispatch.GetProperty<string>(table, "Name"),
                                 Address: GetAddress(table),
                                 IsQueryBacked: TryGetQueryName(table, out var queryName),
                                 QueryName: queryName);
@@ -360,20 +389,15 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
 
     private static string GetAddress(object table)
     {
-        var range = GetOptionalProperty(table, "Range");
-        if (range is null)
-        {
-            return string.Empty;
-        }
-
+        object? range = null;
         try
         {
-            if (ComDispatch.TryInvokeMethod(range, "Address", out var address, false, false))
-            {
-                return address?.ToString() ?? string.Empty;
-            }
-
-            return GetOptionalProperty(range, "Address")?.ToString() ?? string.Empty;
+            range = ComDispatch.GetProperty<object>(table, "Range");
+            return ComDispatch.InvokeMethod(range, "Address")?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
         }
         finally
         {
@@ -385,32 +409,32 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
     {
         queryName = null;
 
-        var queryTable = GetOptionalProperty(table, "QueryTable");
-        if (queryTable is null)
-        {
-            return false;
-        }
-
+        object? queryTable = null;
+        object? connection = null;
         try
         {
-            var connection = GetOptionalProperty(queryTable, "WorkbookConnection");
+            queryTable = ComDispatch.GetProperty<object>(table, "QueryTable");
+            if (queryTable is null)
+            {
+                return false;
+            }
+
+            connection = ComDispatch.GetProperty<object>(queryTable, "WorkbookConnection");
             if (connection is null)
             {
                 return false;
             }
 
-            try
-            {
-                queryName = NormalizeQueryName(GetStringProperty(connection, "Name"));
-                return !string.IsNullOrWhiteSpace(queryName);
-            }
-            finally
-            {
-                ComDispatch.ReleaseIfComObject(connection);
-            }
+            queryName = NormalizeQueryName(ComDispatch.GetProperty<string>(connection, "Name"));
+            return !string.IsNullOrWhiteSpace(queryName);
+        }
+        catch
+        {
+            return false;
         }
         finally
         {
+            ComDispatch.ReleaseIfComObject(connection);
             ComDispatch.ReleaseIfComObject(queryTable);
         }
     }
