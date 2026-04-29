@@ -9,12 +9,14 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
 {
     private readonly object _application;
     private readonly bool _ownsApplication;
+    private readonly SessionAttachTargetMode? _attachTargetMode;
     private bool _disposed;
 
-    private ComExcelApplicationHandle(object application, bool ownsApplication)
+    private ComExcelApplicationHandle(object application, bool ownsApplication, SessionAttachTargetMode? attachTargetMode = null)
     {
         _application = application;
         _ownsApplication = ownsApplication;
+        _attachTargetMode = attachTargetMode;
     }
 
     public static ComExcelApplicationHandle AttachToRunningInstance(SessionAttachTarget target)
@@ -61,7 +63,8 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
             SessionMode: _ownsApplication ? ExcelSessionMode.CreateNew : ExcelSessionMode.AttachToRunning,
             IsReady: ReadBooleanProperty("Ready", defaultValue: true),
             IsInteractive: ReadBooleanProperty("Interactive", defaultValue: true),
-            CalculationState: ReadCalculationState());
+            CalculationState: ReadCalculationState(),
+            AttachTargetMode: _attachTargetMode);
     }
 
     public void ApplyOptions(SessionOptions options)
@@ -264,7 +267,7 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                     "No running Excel instance was available for generic attachment.");
             }
 
-            return new ComExcelApplicationHandle(application, ownsApplication: false);
+            return new ComExcelApplicationHandle(application, ownsApplication: false, attachTargetMode: SessionAttachTargetMode.AnyRunningInstance);
         }
         catch (ExcelSessionTargetException)
         {
@@ -304,7 +307,7 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                 "Close duplicate workbook instances or choose a less ambiguous attachment mode.");
         }
 
-        return new ComExcelApplicationHandle(candidates[0], ownsApplication: false);
+        return new ComExcelApplicationHandle(candidates[0], ownsApplication: false, attachTargetMode: SessionAttachTargetMode.WorkbookOwner);
     }
 
     private static string NormalizePath(string path)

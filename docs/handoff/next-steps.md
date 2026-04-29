@@ -2,17 +2,17 @@
 
 ## Immediate priorities
 
-1. Decide whether any mutating operations can be safely permitted in attached mode now that workbook-owner targeting is deterministic.
-2. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics.
-3. Decide whether attached-mode save/ownership rules need a lightweight lease or explicit operator-confirmed policy before any mutation is allowed.
-4. Keep range read/write and query-formula editing internal until attached-session safety is stronger, then choose one narrow workbook-edit surface to promote.
+1. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics now that attached mutation is lease-gated.
+2. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
+3. Choose the next single narrow workbook-edit surface to promote behind the same attached-session approval gate.
+4. Keep range read/write and query-formula editing internal until that next promoted surface is explicitly chosen.
 5. Package the next bounded work items into small backlog or delegation slices for future agents.
 
 ## Suggested first bounded implementation slice
 
-- attached-session mutation policy refinement on top of workbook-owner targeting plus stricter unsafe-state reporting
+- unsafe-state detection refinement plus one next narrow attached-session workbook-edit capability
 - mock-first tests plus opt-in live validation for the above
-- keep workbook edit/query edit tools internal in the same slice
+- keep the remaining workbook edit/query edit tools internal in the same slice
 
 ## Cautions
 

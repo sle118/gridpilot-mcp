@@ -1,6 +1,7 @@
 using ExcelMcp.Bridge.Contracts;
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core;
+using ExcelMcp.Core.Results;
 using System.Text.Json;
 using ExcelMcp.ToolHost;
 
@@ -106,6 +107,31 @@ public sealed class McpToolServer
                     pattern = new { type = "string" }
                 },
                 required = new[] { "workbookPath", "pattern" }
+            })),
+        new(
+            ToolNames.AttachedSessionGrantMutation,
+            "Grant a workbook-scoped attached-session mutation approval lease.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    ttlMinutes = new { type = "integer" }
+                },
+                required = new[] { "workbookPath" }
+            })),
+        new(
+            ToolNames.AttachedSessionRevokeMutation,
+            "Revoke a workbook-scoped attached-session mutation approval lease.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" }
+                },
+                required = new[] { "workbookPath" }
             }))
     ];
 
@@ -120,6 +146,8 @@ public sealed class McpToolServer
                 ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
                 ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
                 ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
+                ToolNames.AttachedSessionGrantMutation => await HandleGrantApprovalAsync(arguments, cancellationToken),
+                ToolNames.AttachedSessionRevokeMutation => await HandleRevokeApprovalAsync(arguments, cancellationToken),
                 _ => throw new McpToolInputException("invalid_tool", $"Unknown tool '{name}'.")
             };
 
@@ -134,6 +162,10 @@ public sealed class McpToolServer
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer)));
         }
         catch (ExcelSessionTargetException ex)
+        {
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
+        }
+        catch (AttachedMutationApprovalModeException ex)
         {
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
         }
@@ -198,6 +230,22 @@ public sealed class McpToolServer
             cancellationToken);
     }
 
+    private Task<object> HandleGrantApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var ttl = GetOptionalInt32(arguments, "ttlMinutes") is int ttlMinutes
+            ? TimeSpan.FromMinutes(ttlMinutes)
+            : (TimeSpan?)null;
+
+        return ExecuteAsObjectAsync(_workbookServices.GrantAttachedMutationApprovalAsync(workbookPath, ttl, cancellationToken));
+    }
+
+    private Task<object> HandleRevokeApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        return ExecuteAsObjectAsync(_workbookServices.RevokeAttachedMutationApprovalAsync(workbookPath, cancellationToken));
+    }
+
     private static bool IsErrorResult(JsonElement result) =>
         result.ValueKind == JsonValueKind.Object &&
         result.TryGetProperty("succeeded", out var succeeded) &&
@@ -256,6 +304,9 @@ public sealed class McpToolServer
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
 
+    private static async Task<object> ExecuteAsObjectAsync<T>(Task<T> task) where T : class =>
+        await task.ConfigureAwait(false);
+
     private static McpToolCallResult BuildErrorResult(McpToolError error)
     {
         var payload = new { error };
@@ -277,5 +328,17 @@ public sealed class McpToolServer
 
         public Task<T> ExecuteAsync<T>(string workbookPath, Func<WorkbookService, Task<T>> action, CancellationToken cancellationToken = default) =>
             action(_workbookService);
+
+        public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(string workbookPath, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<AttachedMutationApprovalGrantResult>(new AttachedMutationApprovalModeException(
+                "attached_session_approval_not_applicable",
+                "Attached-session mutation approval is not available on a shared workbook service resolver.",
+                "Use the host-owned workbook service resolver in attach mode."));
+
+        public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(string workbookPath, CancellationToken cancellationToken = default) =>
+            Task.FromException<AttachedMutationApprovalRevokeResult>(new AttachedMutationApprovalModeException(
+                "attached_session_approval_not_applicable",
+                "Attached-session mutation approval is not available on a shared workbook service resolver.",
+                "Use the host-owned workbook service resolver in attach mode."));
     }
 }

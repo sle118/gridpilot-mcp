@@ -64,7 +64,7 @@ public sealed class WorkbookServiceTests
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
-            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, false, false, ExcelCalculationState.Pending),
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, false, false, ExcelCalculationState.Pending, SessionAttachTargetMode.WorkbookOwner),
             OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", true)]
         };
 
@@ -153,22 +153,22 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
-    public async Task RefreshQueryAsync_BlocksWhenWorkbookIsAlreadyOpenInSession()
+    public async Task RefreshQueryAsync_RequiresApprovalForAttachedWorkbookOwnerMutation()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
-            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
-            OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", true)]
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
         };
-        var sut = new WorkbookService(session);
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
 
         var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", result.Error!.Code);
+        Assert.Equal("shared_session_approval_required", result.Error!.Code);
         Assert.Empty(fakeWorkbook.RefreshCalls);
         Assert.Empty(session.PushedOptions);
     }
@@ -210,20 +210,66 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
-    public async Task RefreshQueryAsync_BlocksAttachedMutationEvenWhenWorkbookIsNotAlreadyOpen()
+    public async Task RefreshQueryAsync_AllowsAttachedMutationWithApproval()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
-            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done)
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
         };
-        var sut = new WorkbookService(session);
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        approvalRegistry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Error);
+        Assert.Single(fakeWorkbook.RefreshCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_ReturnsExpiredApprovalError()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var now = new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero);
+        var clockNow = now;
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry(() => clockNow);
+        approvalRegistry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        clockNow = now.AddMinutes(11);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
 
         var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
 
         Assert.False(result.Succeeded);
-        Assert.Equal("shared_session_attach_mutation_unsupported", result.Error?.Code);
+        Assert.Equal("shared_session_approval_expired", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_ReturnsScopeMismatchWhenApprovalExistsForDifferentWorkbook()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        approvalRegistry.Grant(@"C:\temp\other.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_scope_mismatch", result.Error?.Code);
         Assert.Empty(fakeWorkbook.RefreshCalls);
     }
 
@@ -260,36 +306,36 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
-    public async Task TryRunQueryAsync_BlocksWhenWorkbookIsAlreadyOpenInSession()
+    public async Task TryRunQueryAsync_RequiresApprovalForAttachedWorkbookOwnerMutation()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
-            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
-            OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", false)]
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
         };
-        var sut = new WorkbookService(session);
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
 
         var result = await sut.TryRunQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", "tmp_probe");
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", result.Error!.Code);
+        Assert.Equal("shared_session_approval_required", result.Error!.Code);
         Assert.Empty(session.PushedOptions);
     }
 
     [Fact]
-    public async Task CleanupTempQueriesAsync_BlocksWhenWorkbookIsAlreadyOpenInSession()
+    public async Task CleanupTempQueriesAsync_RequiresApprovalForAttachedWorkbookOwnerMutation()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
-            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
-            OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", false)]
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
         };
-        var sut = new WorkbookService(session);
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
 
         var result = await sut.CleanupTempQueriesAsync(@"C:\temp\book.xlsx", "tmp_probe_");
 
@@ -297,7 +343,32 @@ public sealed class WorkbookServiceTests
         var errors = result.Errors;
         Assert.NotNull(errors);
         Assert.Single(errors);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", errors[0].Code);
+        Assert.Equal("shared_session_approval_required", errors[0].Code);
         Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CleanupTempQueriesAsync_AllowsAttachedMutationWithApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnCleanupAsync = _ => Task.FromResult(new CleanupResult(
+            DeletedCount: 1,
+            DeletedNames: ["tmp_probe_one"],
+            FailedNames: Array.Empty<string>(),
+            Errors: Array.Empty<OperationError>()));
+
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        approvalRegistry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
+
+        var result = await sut.CleanupTempQueriesAsync(@"C:\temp\book.xlsx", "tmp_probe_");
+
+        Assert.Equal(1, result.DeletedCount);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
     }
 }

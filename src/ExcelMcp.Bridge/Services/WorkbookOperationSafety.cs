@@ -7,10 +7,12 @@ namespace ExcelMcp.Bridge.Services;
 public sealed class WorkbookOperationSafety
 {
     private readonly IExcelSession _session;
+    private readonly IAttachedMutationApprovalRegistry? _approvalRegistry;
 
-    public WorkbookOperationSafety(IExcelSession session)
+    public WorkbookOperationSafety(IExcelSession session, IAttachedMutationApprovalRegistry? approvalRegistry = null)
     {
         _session = session;
+        _approvalRegistry = approvalRegistry;
     }
 
     public async Task<OperationError?> CheckAsync(
@@ -27,16 +29,12 @@ public sealed class WorkbookOperationSafety
         var normalizedTarget = NormalizePath(workbookPath);
         if (diagnostics.SessionMode == ExcelSessionMode.AttachToRunning)
         {
-            var openWorkbooks = await _session.ListOpenWorkbooksAsync(cancellationToken).ConfigureAwait(false);
-            var openWorkbook = openWorkbooks.FirstOrDefault(workbook =>
-                string.Equals(NormalizePath(workbook.FullPath), normalizedTarget, StringComparison.OrdinalIgnoreCase));
-
-            if (openWorkbook is not null)
+            if (diagnostics.AttachTargetMode is not SessionAttachTargetMode.WorkbookOwner)
             {
                 return new OperationError(
-                    Code: "shared_session_workbook_owned_in_attached_session",
-                    Message: $"Operation '{GetOperationLabel(intent)}' is blocked because workbook '{openWorkbook.Name}' is already owned by the attached Excel session.",
-                    Detail: "Read-only inventory and query-definition operations are allowed, but mutating actions remain blocked when the bridge is attached to a live user-owned workbook session.",
+                    Code: "shared_session_approval_scope_mismatch",
+                    Message: $"Operation '{GetOperationLabel(intent)}' requires a workbook-owner attached session.",
+                    Detail: "Attached mutation approval only applies when the bridge is attached to the running Excel instance that already owns the requested workbook.",
                     Source: nameof(WorkbookOperationSafety));
             }
         }
@@ -70,11 +68,40 @@ public sealed class WorkbookOperationSafety
 
         if (diagnostics.SessionMode == ExcelSessionMode.AttachToRunning)
         {
-            return new OperationError(
-                Code: "shared_session_attach_mutation_unsupported",
-                Message: $"Operation '{GetOperationLabel(intent)}' is not yet supported in attached-session mutation mode.",
-                Detail: "Attached live Excel sessions currently allow read-only inspection more broadly, but mutating operations remain blocked until stricter shared-session safeguards are implemented.",
-                Source: nameof(WorkbookOperationSafety));
+            if (_approvalRegistry is null)
+            {
+                return new OperationError(
+                    Code: "shared_session_approval_required",
+                    Message: $"Operation '{GetOperationLabel(intent)}' requires attached-session mutation approval.",
+                    Detail: "Grant a workbook-scoped attached-session mutation approval lease before running mutating tools against a live attached workbook.",
+                    Source: nameof(WorkbookOperationSafety));
+            }
+
+            var approval = _approvalRegistry.Lookup(normalizedTarget);
+            switch (approval.State)
+            {
+                case AttachedMutationApprovalState.Active:
+                    _approvalRegistry.Touch(normalizedTarget);
+                    return null;
+                case AttachedMutationApprovalState.Expired:
+                    return new OperationError(
+                        Code: "shared_session_approval_expired",
+                        Message: $"Operation '{GetOperationLabel(intent)}' is blocked because the attached-session mutation approval has expired.",
+                        Detail: $"The workbook-scoped approval lease for '{normalizedTarget}' expired at {approval.Lease!.ExpiresAtUtc:O}.",
+                        Source: nameof(WorkbookOperationSafety));
+                case AttachedMutationApprovalState.ScopeMismatch:
+                    return new OperationError(
+                        Code: "shared_session_approval_scope_mismatch",
+                        Message: $"Operation '{GetOperationLabel(intent)}' is blocked because approval exists for a different workbook.",
+                        Detail: "Grant mutation approval for the exact workbook path being targeted by this operation.",
+                        Source: nameof(WorkbookOperationSafety));
+                default:
+                    return new OperationError(
+                        Code: "shared_session_approval_required",
+                        Message: $"Operation '{GetOperationLabel(intent)}' requires attached-session mutation approval.",
+                        Detail: "Grant a workbook-scoped attached-session mutation approval lease before running mutating tools against a live attached workbook.",
+                        Source: nameof(WorkbookOperationSafety));
+            }
         }
 
         return null;

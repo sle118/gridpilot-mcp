@@ -2,6 +2,7 @@ using ExcelMcp.Bridge.Services;
 using ExcelMcp.ComAdapter;
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Results;
 using System.Runtime.Versioning;
 
 namespace ExcelMcp.ToolHost;
@@ -12,12 +13,16 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
     private readonly HostOptions _options;
     private readonly IExcelSession? _sharedSession;
     private readonly WorkbookService? _sharedService;
+    private readonly IAttachedMutationApprovalRegistry _approvalRegistry;
+    private readonly AttachedMutationApprovalService _approvalService;
 
     private WorkbookServiceResolver(HostOptions options, IExcelSession? sharedSession)
     {
         _options = options;
         _sharedSession = sharedSession;
-        _sharedService = sharedSession is null ? null : new WorkbookService(sharedSession);
+        _approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        _approvalService = new AttachedMutationApprovalService(_approvalRegistry);
+        _sharedService = sharedSession is null ? null : new WorkbookService(sharedSession, new WorkbookOperationSafety(sharedSession, _approvalRegistry));
     }
 
     public static Task<WorkbookServiceResolver> CreateAsync(HostOptions options)
@@ -54,8 +59,25 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         }
 
         await using var session = ExcelApplicationSession.AttachToRunning(SessionAttachTarget.ForWorkbook(workbookPath));
-        var service = new WorkbookService(session);
+        var service = new WorkbookService(session, new WorkbookOperationSafety(session, _approvalRegistry));
         return await action(service).ConfigureAwait(false);
+    }
+
+    public async Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(
+        string workbookPath,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAttachedWorkbookOwnerModeAsync(workbookPath, cancellationToken).ConfigureAwait(false);
+        return await _approvalService.GrantAsync(workbookPath, ttl, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(
+        string workbookPath,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAttachedWorkbookOwnerModeAsync(workbookPath, cancellationToken, requireRunningWorkbook: false).ConfigureAwait(false);
+        return await _approvalService.RevokeAsync(workbookPath, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -64,5 +86,35 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         {
             await _sharedSession.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private async Task EnsureAttachedWorkbookOwnerModeAsync(
+        string workbookPath,
+        CancellationToken cancellationToken,
+        bool requireRunningWorkbook = true)
+    {
+        if (_options.SessionMode != SessionMode.Attach)
+        {
+            throw new AttachedMutationApprovalModeException(
+                "attached_session_approval_not_applicable",
+                "Attached-session mutation approval is only available when the host is running in attach mode.",
+                "Restart the host with --session-mode attach to grant mutation approval for a live Excel workbook.");
+        }
+
+        if (_options.AttachTarget != SessionAttachTargetMode.WorkbookOwner)
+        {
+            throw new AttachedMutationApprovalModeException(
+                "attached_session_approval_scope_mismatch",
+                "Attached-session mutation approval requires workbook-owner attach targeting.",
+                "Restart the host with --attach-target workbook-owner so approval applies to a specific running workbook owner.");
+        }
+
+        if (!requireRunningWorkbook)
+        {
+            return;
+        }
+
+        await using var _ = ExcelApplicationSession.AttachToRunning(SessionAttachTarget.ForWorkbook(workbookPath));
+        cancellationToken.ThrowIfCancellationRequested();
     }
 }

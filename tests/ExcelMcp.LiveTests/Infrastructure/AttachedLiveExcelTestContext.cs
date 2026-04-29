@@ -2,6 +2,7 @@ using ExcelMcp.Bridge.Services;
 using ExcelMcp.ComAdapter;
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Results;
 using System.Runtime.Versioning;
 namespace ExcelMcp.LiveTests.Infrastructure;
 
@@ -11,18 +12,22 @@ internal sealed class AttachedLiveExcelTestContext : IAsyncDisposable
     private readonly List<IAsyncDisposable> _resources = [];
     private readonly ExcelApplicationSession _ownerSession;
     private readonly IWorkbookHandle _ownerWorkbook;
+    private readonly AttachedMutationApprovalService _approvalService;
 
     private AttachedLiveExcelTestContext(
         string workbookPath,
         ExcelApplicationSession ownerSession,
         IWorkbookHandle ownerWorkbook,
-        ExcelApplicationSession attachedSession)
+        ExcelApplicationSession attachedSession,
+        AttachedMutationApprovalService approvalService,
+        WorkbookService workbookService)
     {
         WorkbookPath = workbookPath;
         _ownerSession = ownerSession;
         _ownerWorkbook = ownerWorkbook;
         Session = attachedSession;
-        WorkbookService = new WorkbookService(attachedSession);
+        _approvalService = approvalService;
+        WorkbookService = workbookService;
     }
 
     public string WorkbookPath { get; }
@@ -30,6 +35,12 @@ internal sealed class AttachedLiveExcelTestContext : IAsyncDisposable
     public ExcelApplicationSession Session { get; }
 
     public WorkbookService WorkbookService { get; }
+
+    public Task<AttachedMutationApprovalGrantResult> GrantApprovalAsync(TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+        _approvalService.GrantAsync(WorkbookPath, ttl, cancellationToken);
+
+    public Task<AttachedMutationApprovalRevokeResult> RevokeApprovalAsync(CancellationToken cancellationToken = default) =>
+        _approvalService.RevokeAsync(WorkbookPath, cancellationToken);
 
     public static async Task<AttachedLiveExcelTestContext> CreateAsync()
     {
@@ -49,7 +60,11 @@ internal sealed class AttachedLiveExcelTestContext : IAsyncDisposable
             throw Xunit.Sdk.SkipException.ForSkip($"Attached-session live tests require a usable workbook-targeted Excel attachment: {ex.Message}");
         }
 
-        return new AttachedLiveExcelTestContext(workbookPath, ownerSession, ownerWorkbook, attachedSession);
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var approvalService = new AttachedMutationApprovalService(approvalRegistry);
+        var workbookService = new WorkbookService(attachedSession, new WorkbookOperationSafety(attachedSession, approvalRegistry));
+
+        return new AttachedLiveExcelTestContext(workbookPath, ownerSession, ownerWorkbook, attachedSession, approvalService, workbookService);
     }
 
     public async ValueTask DisposeAsync()

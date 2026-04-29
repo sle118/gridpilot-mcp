@@ -18,7 +18,7 @@ public sealed class LiveAttachedSessionSafetyTests
     }
 
     [AttachedLiveExcelFact]
-    public async Task AttachedSession_MutatingRefresh_IsBlockedWhenWorkbookIsAlreadyOpen()
+    public async Task AttachedSession_MutatingRefresh_IsBlockedWithoutApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();
 
@@ -29,11 +29,11 @@ public sealed class LiveAttachedSessionSafetyTests
 
         Assert.False(refresh.Succeeded);
         Assert.NotNull(refresh.Error);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", refresh.Error!.Code);
+        Assert.Equal("shared_session_approval_required", refresh.Error!.Code);
     }
 
     [AttachedLiveExcelFact]
-    public async Task AttachedSession_Probe_IsBlockedWhenWorkbookIsAlreadyOpen()
+    public async Task AttachedSession_Probe_IsBlockedWithoutApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();
 
@@ -44,11 +44,11 @@ public sealed class LiveAttachedSessionSafetyTests
 
         Assert.False(probe.Succeeded);
         Assert.NotNull(probe.Error);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", probe.Error!.Code);
+        Assert.Equal("shared_session_approval_required", probe.Error!.Code);
     }
 
     [AttachedLiveExcelFact]
-    public async Task AttachedSession_Cleanup_IsBlockedWhenWorkbookIsAlreadyOpen()
+    public async Task AttachedSession_Cleanup_IsBlockedWithoutApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();
 
@@ -59,6 +59,83 @@ public sealed class LiveAttachedSessionSafetyTests
         Assert.Equal(0, cleanup.DeletedCount);
         Assert.NotNull(cleanup.Errors);
         Assert.Single(cleanup.Errors);
-        Assert.Equal("shared_session_workbook_owned_in_attached_session", cleanup.Errors[0].Code);
+        Assert.Equal("shared_session_approval_required", cleanup.Errors[0].Code);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Refresh_WorksAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        await context.GrantApprovalAsync();
+
+        var refresh = await context.WorkbookService.RefreshQueryAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemovedLoaded",
+            new RefreshOptions(Silent: true));
+
+        Assert.True(refresh.Succeeded);
+        Assert.Null(refresh.Error);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Probe_WorksAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        await context.GrantApprovalAsync();
+
+        var probe = await context.WorkbookService.TryRunQueryAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemoved",
+            "tmp_probe");
+
+        Assert.True(probe.Succeeded);
+        Assert.Null(probe.Error);
+        Assert.NotNull(probe.Preview);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Cleanup_WorksAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        await context.GrantApprovalAsync();
+
+        var cleanup = await context.WorkbookService.CleanupTempQueriesAsync(
+            context.WorkbookPath,
+            "tmp_probe_nonexistent");
+
+        Assert.NotNull(cleanup);
+        Assert.Empty(cleanup.Errors ?? []);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_Revoke_ReblocksMutation()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        await context.GrantApprovalAsync();
+        await context.RevokeApprovalAsync();
+
+        var refresh = await context.WorkbookService.RefreshQueryAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemovedLoaded",
+            new RefreshOptions(Silent: true));
+
+        Assert.False(refresh.Succeeded);
+        Assert.Equal("shared_session_approval_required", refresh.Error?.Code);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_ExpiredApproval_ReblocksMutation()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        await context.GrantApprovalAsync(TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+
+        var refresh = await context.WorkbookService.RefreshQueryAsync(
+            context.WorkbookPath,
+            "tbleWithErrorRemovedLoaded",
+            new RefreshOptions(Silent: true));
+
+        Assert.False(refresh.Succeeded);
+        Assert.Equal("shared_session_approval_expired", refresh.Error?.Code);
     }
 }

@@ -7,4 +7,6 @@ public static class ToolNames
     public const string QueryRefresh = "query_refresh";
     public const string QueryRunProbe = "query_run_probe";
     public const string QueryCleanupTemp = "query_cleanup_temp";
+    public const string AttachedSessionGrantMutation = "attached_session_grant_mutation";
+    public const string AttachedSessionRevokeMutation = "attached_session_revoke_mutation";
 }
