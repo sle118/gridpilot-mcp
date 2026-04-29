@@ -135,6 +135,7 @@ public sealed class WorkbookServiceTests
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
             OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", true)]
         };
         var sut = new WorkbookService(session);
@@ -143,9 +144,63 @@ public sealed class WorkbookServiceTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_unsafe", result.Error!.Code);
+        Assert.Equal("shared_session_workbook_open", result.Error!.Code);
         Assert.Empty(fakeWorkbook.RefreshCalls);
         Assert.Empty(session.PushedOptions);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_BlocksForUnsafeUiStateWhenExcelIsNotReady()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.CreateNew, false, true, ExcelCalculationState.Done)
+        };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_ui_unsafe", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_BlocksForBusyCalculationState()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.CreateNew, true, true, ExcelCalculationState.Calculating)
+        };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_busy", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_BlocksAttachedMutationEvenWhenWorkbookIsNotAlreadyOpen()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done)
+        };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_attach_mutation_unsupported", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.RefreshCalls);
     }
 
     [Fact]
@@ -187,6 +242,7 @@ public sealed class WorkbookServiceTests
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
             OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", false)]
         };
         var sut = new WorkbookService(session);
@@ -195,7 +251,7 @@ public sealed class WorkbookServiceTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
-        Assert.Equal("shared_session_unsafe", result.Error!.Code);
+        Assert.Equal("shared_session_workbook_open", result.Error!.Code);
         Assert.Empty(session.PushedOptions);
     }
 
@@ -206,6 +262,7 @@ public sealed class WorkbookServiceTests
         var session = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
             OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", false)]
         };
         var sut = new WorkbookService(session);
@@ -216,7 +273,7 @@ public sealed class WorkbookServiceTests
         var errors = result.Errors;
         Assert.NotNull(errors);
         Assert.Single(errors);
-        Assert.Equal("shared_session_unsafe", errors[0].Code);
+        Assert.Equal("shared_session_workbook_open", errors[0].Code);
         Assert.Equal(0, fakeWorkbook.SaveCallCount);
     }
 }

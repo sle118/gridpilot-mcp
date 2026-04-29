@@ -105,21 +105,32 @@ public sealed class McpToolServer
 
     public async Task<McpToolCallResult> CallToolAsync(string name, JsonElement arguments, CancellationToken cancellationToken = default)
     {
-        object structuredContent = name switch
+        try
         {
-            ToolNames.WorkbookListInventory => await HandleListInventoryAsync(arguments, cancellationToken),
-            ToolNames.QueryGet => await HandleGetQueryAsync(arguments, cancellationToken),
-            ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
-            ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
-            ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
-            _ => throw new InvalidOperationException($"Unknown tool '{name}'.")
-        };
+            object structuredContent = name switch
+            {
+                ToolNames.WorkbookListInventory => await HandleListInventoryAsync(arguments, cancellationToken),
+                ToolNames.QueryGet => await HandleGetQueryAsync(arguments, cancellationToken),
+                ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
+                ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
+                ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
+                _ => throw new McpToolInputException("invalid_tool", $"Unknown tool '{name}'.")
+            };
 
-        var structuredJson = ToJsonElement(structuredContent);
-        return new McpToolCallResult(
-            Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(structuredContent, JsonOptions) } },
-            StructuredContent: structuredJson,
-            IsError: IsErrorResult(structuredJson));
+            var structuredJson = ToJsonElement(structuredContent);
+            return new McpToolCallResult(
+                Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(structuredContent, JsonOptions) } },
+                StructuredContent: structuredJson,
+                IsError: IsErrorResult(structuredJson));
+        }
+        catch (McpToolInputException ex)
+        {
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer)));
+        }
+        catch (Exception ex)
+        {
+            return BuildErrorResult(new McpToolError("tool_call_failed", ex.Message, ex.InnerException?.Message, nameof(McpToolServer)));
+        }
     }
 
     private async Task<object> HandleListInventoryAsync(JsonElement arguments, CancellationToken cancellationToken)
@@ -177,7 +188,7 @@ public sealed class McpToolServer
             return value;
         }
 
-        throw new InvalidOperationException($"Missing required string argument '{propertyName}'.");
+        throw new McpToolInputException("invalid_arguments", $"Missing required string argument '{propertyName}'.");
     }
 
     private static string? GetOptionalString(JsonElement element, string propertyName)
@@ -219,4 +230,14 @@ public sealed class McpToolServer
 
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
+
+    private static McpToolCallResult BuildErrorResult(McpToolError error)
+    {
+        var payload = new { error };
+        var structuredJson = ToJsonElement(payload);
+        return new McpToolCallResult(
+            Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(payload, JsonOptions) } },
+            StructuredContent: structuredJson,
+            IsError: true);
+    }
 }

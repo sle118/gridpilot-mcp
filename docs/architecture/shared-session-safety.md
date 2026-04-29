@@ -35,11 +35,18 @@ Future workbook write/edit operations should use the same safety seam.
 The bridge enforces safety before opening the workbook for a mutating action:
 
 1. classify the operation intent
-2. inspect `ListOpenWorkbooksAsync(...)` on the current session
-3. compare the target workbook path against already-open workbooks in that session
-4. return a structured `shared_session_unsafe` error when the action should be blocked
+2. inspect session diagnostics such as session mode, readiness, interactivity, and calculation state
+3. inspect `ListOpenWorkbooksAsync(...)` on the current session when attached-session workbook ownership matters
+4. return a structured refusal reason when the action should be blocked
 
 This keeps COM-specific workbook discovery inside the adapter and keeps policy decisions in the bridge.
+
+Current refusal codes are intentionally distinct:
+
+- `shared_session_workbook_open`
+- `shared_session_ui_unsafe`
+- `shared_session_busy`
+- `shared_session_attach_mutation_unsupported`
 
 ## Save expectations
 
@@ -53,10 +60,10 @@ This avoids hidden differences between tool callers and keeps workbook-close beh
 
 ## Known limits
 
-- the current guard only reasons about workbooks already open in the current Excel session
-- it does not yet detect all unsafe UI states such as an in-progress human cell edit or modal dialog
+- the current unsafe-state detection is still heuristic and relies on Excel readiness, interactivity, and calculation state rather than richer UI inspection
 - it does not yet provide a lease/lock model for coordinated shared mutation
-- `attach` mode is therefore best treated as read-heavy today, with mutation blocked whenever the workbook is already live in that attached session
+- `attach` mode is still read-heavy today, because mutation remains blocked even when the workbook is not already open if the session is merely attached
+- attached-session live validation is supported, but gated separately because COM attachment to the intended running Excel instance is workstation-sensitive
 
 ## Next design pressure
 
@@ -64,5 +71,5 @@ The next shared-session step should define:
 
 - explicit open/attach policy per tool or operation class
 - whether any mutating operations can be permitted in attached mode under stricter preconditions
-- how the bridge should detect and report unsafe active-UI states
+- how the bridge should detect and report unsafe active-UI states beyond the current readiness/interactivity heuristics
 - whether a lightweight operation lease model is needed before broader workbook editing is exposed

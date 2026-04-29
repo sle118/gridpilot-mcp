@@ -10,6 +10,17 @@ namespace ExcelMcp.IntegrationTests;
 public sealed class McpToolServerTests
 {
     [Fact]
+    public void Initialize_ReturnsServerInfoAndProtocolVersion()
+    {
+        var server = CreateServer();
+
+        var result = server.Initialize("2024-11-05");
+
+        Assert.Equal("2024-11-05", result.ProtocolVersion);
+        Assert.Equal("GridPilot MCP", result.ServerInfo.GetType().GetProperty("name")?.GetValue(result.ServerInfo));
+    }
+
+    [Fact]
     public void ListTools_ReturnsOnlyTheNarrowSupportedSurface()
     {
         var server = CreateServer();
@@ -58,6 +69,7 @@ public sealed class McpToolServerTests
         var fakeSession = new FakeExcelSession
         {
             Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done),
             OpenWorkbooks = [new WorkbookSummary("book.xlsx", @"C:\temp\book.xlsx", true)]
         };
         var server = new McpToolServer(new WorkbookService(fakeSession));
@@ -67,7 +79,33 @@ public sealed class McpToolServerTests
 
         Assert.True(result.IsError);
         Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
-        Assert.Equal("shared_session_unsafe", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+        Assert.Equal("shared_session_workbook_open", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsStructuredErrorForMissingArguments()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.QueryGet,
+            JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\book.xlsx" }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsStructuredErrorForUnknownTool()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            "unknown_tool",
+            JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\book.xlsx" }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_tool", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     private static McpToolServer CreateServer(FakeWorkbookHandle? workbook = null)

@@ -10,8 +10,8 @@ internal sealed record HostOptions(SessionMode SessionMode, bool Visible)
 {
     public static HostOptions Parse(string[] args)
     {
-        var mode = SessionMode.CreateNew;
-        var visible = false;
+        var mode = ReadModeFromEnvironment();
+        var visible = ReadVisibleFromEnvironment();
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -29,20 +29,11 @@ internal sealed record HostOptions(SessionMode SessionMode, bool Visible)
             }
         }
 
-        var envMode = Environment.GetEnvironmentVariable("GRIDPILOT_SESSION_MODE");
-        if (!string.IsNullOrWhiteSpace(envMode))
-        {
-            mode = ParseMode(envMode);
-        }
-
-        var envVisible = Environment.GetEnvironmentVariable("GRIDPILOT_SESSION_VISIBLE");
-        if (string.Equals(envVisible, "1", StringComparison.Ordinal))
-        {
-            visible = true;
-        }
-
         return new HostOptions(mode, visible);
     }
+
+    public string ToStartupSummary() =>
+        $"GridPilot MCP starting with sessionMode={SessionModeToString(SessionMode)}, visible={Visible.ToString().ToLowerInvariant()}.";
 
     private static SessionMode ParseMode(string value) =>
         value.Trim().ToLowerInvariant() switch
@@ -50,6 +41,25 @@ internal sealed record HostOptions(SessionMode SessionMode, bool Visible)
             "attach" => SessionMode.Attach,
             "create-new" => SessionMode.CreateNew,
             "new" => SessionMode.CreateNew,
-            _ => SessionMode.CreateNew
+            _ => throw new InvalidOperationException($"Unsupported session mode '{value}'. Use 'attach' or 'create-new'.")
+        };
+
+    private static SessionMode ReadModeFromEnvironment()
+    {
+        var envMode = Environment.GetEnvironmentVariable("GRIDPILOT_SESSION_MODE");
+        return string.IsNullOrWhiteSpace(envMode) ? SessionMode.CreateNew : ParseMode(envMode);
+    }
+
+    private static bool ReadVisibleFromEnvironment()
+    {
+        var envVisible = Environment.GetEnvironmentVariable("GRIDPILOT_SESSION_VISIBLE");
+        return string.Equals(envVisible, "1", StringComparison.Ordinal);
+    }
+
+    private static string SessionModeToString(SessionMode mode) =>
+        mode switch
+        {
+            SessionMode.Attach => "attach",
+            _ => "create-new"
         };
 }

@@ -2,17 +2,17 @@
 
 ## Immediate priorities
 
-1. Expand shared-session safeguards beyond the current attached-session mutation block.
-2. Define unsafe UI-state detection and reporting for attached live sessions.
-3. Decide whether any mutating operations can be safely permitted in attached mode under stricter preconditions.
-4. Decide whether broader workbook edit and range workflows should be promoted beyond the current narrow internal seams.
+1. Decide whether any mutating operations can be safely permitted in attached mode under stricter preconditions.
+2. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics.
+3. Tighten running-instance attachment strategy so attached live sessions can be targeted more deterministically.
+4. Keep range read/write and query-formula editing internal until attached-session safety is stronger, then choose one narrow workbook-edit surface to promote.
 5. Package the next bounded work items into small backlog or delegation slices for future agents.
 
 ## Suggested first bounded implementation slice
 
-- attached-session safety refinement and unsafe-state reporting
-- the next thin MCP host improvements around configuration and error clarity
+- attached-session acquisition/binding refinement plus stricter unsafe-state reporting
 - mock-first tests plus opt-in live validation for the above
+- keep workbook edit/query edit tools internal in the same slice
 
 ## Cautions
 

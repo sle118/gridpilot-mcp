@@ -13,12 +13,15 @@ internal sealed class FakeExcelApplicationHandle : IExcelApplicationHandle
     }
 
     public SessionState CurrentState { get; private set; }
+    public SessionDiagnostics CurrentDiagnostics { get; set; } = new(ExcelSessionMode.CreateNew, true, true, ExcelCalculationState.Done);
 
     public IReadOnlyCollection<SessionState> RestoreHistory => _restoreHistory;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public SessionState CaptureState() => CurrentState;
+
+    public SessionDiagnostics CaptureDiagnostics() => CurrentDiagnostics;
 
     public void ApplyOptions(SessionOptions options)
     {

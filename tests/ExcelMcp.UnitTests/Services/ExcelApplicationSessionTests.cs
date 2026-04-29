@@ -78,4 +78,18 @@ public sealed class ExcelApplicationSessionTests
         Assert.Equal(DefaultState, application.CurrentState);
         Assert.Equal(2, application.RestoreHistory.Count);
     }
+
+    [Fact]
+    public async Task GetDiagnosticsAsync_ReturnsApplicationDiagnostics()
+    {
+        var application = new FakeExcelApplicationHandle(DefaultState)
+        {
+            CurrentDiagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, false, false, ExcelCalculationState.Pending)
+        };
+        await using var session = new ExcelApplicationSession(application);
+
+        var diagnostics = await session.GetDiagnosticsAsync();
+
+        Assert.Equal(application.CurrentDiagnostics, diagnostics);
+    }
 }

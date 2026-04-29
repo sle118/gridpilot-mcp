@@ -3,6 +3,7 @@ namespace ExcelMcp.Core.Abstractions;
 public interface IExcelApplicationHandle : IAsyncDisposable
 {
     SessionState CaptureState();
+    SessionDiagnostics CaptureDiagnostics();
     void ApplyOptions(SessionOptions options);
     void RestoreState(SessionState state);
 

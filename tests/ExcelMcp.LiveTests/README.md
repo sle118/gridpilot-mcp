@@ -13,3 +13,8 @@ Live tests must remain:
 The tracked baseline fixture now lives at `tests/live/fixtures/test_workbook.xlsx`.
 
 Tests must copy that workbook to a throwaway temp file before opening it in Excel. Never run live tests directly against the tracked fixture.
+
+Environment gates:
+
+- `RUN_LIVE_EXCEL_TESTS=1` enables the standard live suite
+- `RUN_ATTACHED_LIVE_EXCEL_TESTS=1` additionally enables the attached-session live tests

@@ -60,6 +60,17 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
             FastCombine: null);
     }
 
+    public SessionDiagnostics CaptureDiagnostics()
+    {
+        ThrowIfDisposed();
+
+        return new SessionDiagnostics(
+            SessionMode: _ownsApplication ? ExcelSessionMode.CreateNew : ExcelSessionMode.AttachToRunning,
+            IsReady: ReadBooleanProperty("Ready", defaultValue: true),
+            IsInteractive: ReadBooleanProperty("Interactive", defaultValue: true),
+            CalculationState: ReadCalculationState());
+    }
+
     public void ApplyOptions(SessionOptions options)
     {
         ThrowIfDisposed();
@@ -189,5 +200,36 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private bool ReadBooleanProperty(string propertyName, bool defaultValue)
+    {
+        if (!ComDispatch.TryGetProperty(_application, propertyName, out var value) || value is null)
+        {
+            return defaultValue;
+        }
+
+        return value switch
+        {
+            bool flag => flag,
+            _ => Convert.ToInt32(value) != 0
+        };
+    }
+
+    private ExcelCalculationState ReadCalculationState()
+    {
+        if (!ComDispatch.TryGetProperty(_application, "CalculationState", out var value) || value is null)
+        {
+            return ExcelCalculationState.Unknown;
+        }
+
+        var numericValue = Convert.ToInt32(value);
+        return numericValue switch
+        {
+            0 => ExcelCalculationState.Done,
+            1 => ExcelCalculationState.Calculating,
+            2 => ExcelCalculationState.Pending,
+            _ => ExcelCalculationState.Unknown
+        };
     }
 }

@@ -29,6 +29,9 @@ public sealed class ExcelApplicationSession : IExcelSession
     public Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default) =>
         _scopeManager.GetStateAsync(cancellationToken);
 
+    public Task<SessionDiagnostics> GetDiagnosticsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(_application.CaptureDiagnostics());
+
     public async Task<SessionOptionsScope> BeginScopeAsync(SessionOptions options, CancellationToken cancellationToken = default)
     {
         var token = await PushOptionsAsync(options, cancellationToken).ConfigureAwait(false);

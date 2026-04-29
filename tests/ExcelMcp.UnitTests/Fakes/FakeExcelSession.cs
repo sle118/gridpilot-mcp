@@ -10,11 +10,15 @@ internal sealed class FakeExcelSession : IExcelSession
     public int PopCallCount { get; private set; }
     public List<TimeSpan> WaitCalls { get; } = [];
     public IReadOnlyList<WorkbookSummary> OpenWorkbooks { get; set; } = Array.Empty<WorkbookSummary>();
+    public SessionDiagnostics Diagnostics { get; set; } = new(ExcelSessionMode.CreateNew, true, true, ExcelCalculationState.Done);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new SessionState(true, true, true, true, false));
+
+    public Task<SessionDiagnostics> GetDiagnosticsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Diagnostics);
 
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(OpenWorkbooks);
