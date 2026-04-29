@@ -8,6 +8,7 @@ public sealed class LiveWorkbookInventoryTests
 {
     private static readonly string[] ExpectedQueries =
     [
+        "tbleDirectRefreshLoaded",
         "tbleWithErrorOnChangedType",
         "tbleWithErrorRemoved",
         "tbleWithErrorRemovedLoaded",
@@ -28,19 +29,22 @@ public sealed class LiveWorkbookInventoryTests
 
         var loadedQueries = queries.Where(q => q.LoadToWorksheet).Select(q => q.Name).OrderBy(x => x).ToArray();
         Assert.Equal(
-            new[] { "tbleWithErrorOnChangedTypeLoaded", "tbleWithErrorRemovedLoaded" },
+            new[] { "tbleDirectRefreshLoaded", "tbleWithErrorOnChangedTypeLoaded", "tbleWithErrorRemovedLoaded" },
             loadedQueries);
 
         Assert.Contains(queries, query => query.Name == "tbleWithErrorOnChangedTypeLoaded" && !string.IsNullOrWhiteSpace(query.Formula));
+        Assert.Contains(queries, query => query.Name == "tbleDirectRefreshLoaded" && !string.IsNullOrWhiteSpace(query.Formula));
         Assert.Contains(queries, query => query.Name == "tbleWithErrorRemoved" && !string.IsNullOrWhiteSpace(query.Formula));
 
+        Assert.Contains(sheets, sheet => sheet.Name == "tbleDirectRefreshLoaded");
         Assert.Contains(sheets, sheet => sheet.Name == "tbleWithErrorOnChangedTypeLoade");
         Assert.Contains(sheets, sheet => sheet.Name == "tbleWithErrorRemovedLoaded");
 
+        Assert.Contains(tables, table => table.QueryName == "tbleDirectRefreshLoaded");
         Assert.Contains(tables, table => table.QueryName == "tbleWithErrorOnChangedTypeLoaded");
         Assert.Contains(tables, table => table.QueryName == "tbleWithErrorRemovedLoaded");
 
-        Assert.True(connections.Count >= 4);
+        Assert.True(connections.Count >= 5);
         Assert.Contains(connections, connection => connection.Name.Contains("tbleWithErrorOnChangedType", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(connections, connection => connection.Name.Contains("tbleWithErrorRemoved", StringComparison.OrdinalIgnoreCase));
     }

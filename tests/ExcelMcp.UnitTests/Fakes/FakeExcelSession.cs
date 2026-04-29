@@ -9,6 +9,7 @@ internal sealed class FakeExcelSession : IExcelSession
     public List<SessionOptions> PushedOptions { get; } = [];
     public int PopCallCount { get; private set; }
     public List<TimeSpan> WaitCalls { get; } = [];
+    public IReadOnlyList<WorkbookSummary> OpenWorkbooks { get; set; } = Array.Empty<WorkbookSummary>();
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
@@ -16,7 +17,7 @@ internal sealed class FakeExcelSession : IExcelSession
         Task.FromResult(new SessionState(true, true, true, true, false));
 
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<WorkbookSummary>>(Array.Empty<WorkbookSummary>());
+        Task.FromResult(OpenWorkbooks);
 
     public Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default) =>
         Task.FromResult(Workbook);

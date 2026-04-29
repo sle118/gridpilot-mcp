@@ -483,7 +483,26 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             ComDispatch.ReleaseIfComObject(connections);
         }
 
-        return null;
+        var queryTable = FindQueryTableByQueryName(queryName);
+        if (queryTable is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var connection = ComDispatch.GetProperty<object>(queryTable, "WorkbookConnection");
+            return connection;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(queryTable);
+        }
+
     }
 
     private object? FindQueryTableByQueryName(string queryName)
@@ -904,12 +923,18 @@ in
             }
 
             connection = ComDispatch.GetProperty<object>(queryTable, "WorkbookConnection");
-            if (connection is null)
+            if (connection is not null)
             {
-                return false;
+                queryName = NormalizeQueryName(ComDispatch.GetProperty<string>(connection, "Name"));
+                if (!string.IsNullOrWhiteSpace(queryName) &&
+                    !string.Equals(queryName, "Connection", StringComparison.OrdinalIgnoreCase) &&
+                    !Regex.IsMatch(queryName, @"^Connection\d*$", RegexOptions.IgnoreCase))
+                {
+                    return true;
+                }
             }
 
-            queryName = NormalizeQueryName(ComDispatch.GetProperty<string>(connection, "Name"));
+            queryName = TryGetQueryNameFromCommandText(queryTable);
             return !string.IsNullOrWhiteSpace(queryName);
         }
         catch
@@ -921,6 +946,23 @@ in
             ComDispatch.ReleaseIfComObject(connection);
             ComDispatch.ReleaseIfComObject(queryTable);
         }
+    }
+
+    private static string? TryGetQueryNameFromCommandText(object queryTable)
+    {
+        var commandText = GetOptionalProperty(queryTable, "CommandText");
+        if (commandText is Array values && values.Length > 0)
+        {
+            commandText = values.GetValue(values.GetLowerBound(0));
+        }
+
+        if (commandText is not string text || string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(text, @"\[(?<name>[^\]]+)\]");
+        return match.Success ? match.Groups["name"].Value : null;
     }
 
     private static string? NormalizeQueryName(string? connectionName)

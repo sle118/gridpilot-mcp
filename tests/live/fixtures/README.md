@@ -4,11 +4,19 @@
 
 Current baseline semantics:
 
-- 4 Power Query queries total
+- 5 Power Query queries total
 - 2 connection-only queries
-- 2 queries loaded to worksheets/tables
+- 3 queries loaded to worksheets/tables
 - one query pair that still contains an error
 - one query pair where the error is filtered out or removed
+- one direct-load query used specifically for refresh validation after source-table edits
+
+Current named coverage anchors:
+
+- `tbleDirectRefreshLoaded`: direct load from `Table1`, used for live refresh assertions
+- `tbleWithErrorRemoved`: stable probe candidate and filtered-error baseline
+- `tbleWithErrorOnChangedType`: known-error probe candidate
+- `tbleWithErrorRemovedLoaded` and `tbleWithErrorOnChangedTypeLoaded`: loaded inventory coverage
 
 Rules for maintainers:
 

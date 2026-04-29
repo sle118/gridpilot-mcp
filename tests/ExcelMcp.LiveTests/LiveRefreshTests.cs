@@ -7,22 +7,31 @@ namespace ExcelMcp.LiveTests;
 public sealed class LiveRefreshTests
 {
     [LiveExcelFact]
-    public async Task RefreshQueryAsync_SucceedsForKnownLoadedQuery()
+    public async Task RefreshQueryAsync_UpdatesLoadedQueryAfterFormulaChange()
     {
         await using var context = await LiveExcelTestContext.CreateAsync();
+
+        await using (var workbook = await context.OpenWorkbookAsync())
+        {
+            await workbook.SetQueryFormulaAsync(
+                "tbleWithErrorRemoved",
+                "let Source = #table({\"Value\"}, {{999}}) in Source");
+            await workbook.SaveAsync();
+        }
 
         var refresh = await context.WorkbookService.RefreshQueryAsync(
             context.WorkbookPath,
             "tbleWithErrorRemovedLoaded",
-            new RefreshOptions(Silent: true));
+            new RefreshOptions(Silent: true, PreferSynchronousTableRefresh: false));
 
         Assert.True(refresh.Succeeded);
         Assert.Equal("tbleWithErrorRemovedLoaded", refresh.Target);
         Assert.Contains(refresh.Mode, new[] { "query-table", "connection" });
         Assert.True(refresh.Duration >= TimeSpan.Zero);
 
-        var queries = await context.WorkbookService.ListQueriesAsync(context.WorkbookPath);
-        Assert.Contains(queries, query => query.Name == "tbleWithErrorRemovedLoaded");
+        await using var reloadedWorkbook = await context.OpenWorkbookAsync();
+        var range = await reloadedWorkbook.ReadRangeAsync("A2", "tbleWithErrorRemovedLoaded");
+        Assert.Equal(999d, Convert.ToDouble(range.Values[1, 1]));
     }
 
     [LiveExcelFact]

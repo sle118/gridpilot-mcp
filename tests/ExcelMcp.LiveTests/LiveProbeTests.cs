@@ -10,6 +10,7 @@ public sealed class LiveProbeTests
     public async Task TryRunQueryAsync_ReturnsPreviewRowsAndCleansUpTempArtifacts()
     {
         await using var context = await LiveExcelTestContext.CreateAsync();
+        var baselineConnections = await context.WorkbookService.ListConnectionsAsync(context.WorkbookPath);
 
         var probe = await context.WorkbookService.TryRunQueryAsync(
             context.WorkbookPath,
@@ -25,7 +26,9 @@ public sealed class LiveProbeTests
         Assert.DoesNotContain(queries, query => query.Name == probe.TempQuery);
 
         var connections = await context.WorkbookService.ListConnectionsAsync(context.WorkbookPath);
-        Assert.DoesNotContain(connections, connection => string.Equals(connection.Name, "Connection", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(
+            baselineConnections.Select(connection => connection.Name).OrderBy(name => name),
+            connections.Select(connection => connection.Name).OrderBy(name => name));
     }
 
     [LiveExcelFact]
