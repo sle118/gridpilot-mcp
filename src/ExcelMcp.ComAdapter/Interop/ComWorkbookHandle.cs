@@ -2,6 +2,7 @@ using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Results;
 using System.Collections;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 
@@ -224,8 +225,122 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             ComDispatch.ReleaseIfComObject(queries);
         }
     }
-    public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => throw NotYetImplemented();
-    public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => throw NotYetImplemented();
+    public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        options ??= new RefreshOptions();
+
+        var stopwatch = Stopwatch.StartNew();
+        object? queryTable = null;
+        object? connection = null;
+
+        try
+        {
+            if (options.PreferSynchronousTableRefresh)
+            {
+                queryTable = FindQueryTableByQueryName(queryName);
+                if (queryTable is not null)
+                {
+                    ComDispatch.InvokeMethod(queryTable, "Refresh", false);
+                    WaitForAsyncQueries(options.Timeout, cancellationToken, stopwatch);
+                    return Task.FromResult(BuildRefreshResult(true, queryName, "query-table", stopwatch.Elapsed));
+                }
+            }
+
+            connection = FindConnectionByQueryName(queryName);
+            if (connection is null)
+            {
+                return Task.FromResult(BuildRefreshResult(
+                    false,
+                    queryName,
+                    "query",
+                    stopwatch.Elapsed,
+                    new OperationError(
+                        Code: "query_not_found",
+                        Message: $"Query '{queryName}' was not found for targeted refresh.",
+                        Source: nameof(ComWorkbookHandle))));
+            }
+
+            ComDispatch.InvokeMethod(connection, "Refresh");
+            WaitForAsyncQueries(options.Timeout, cancellationToken, stopwatch);
+            return Task.FromResult(BuildRefreshResult(true, queryName, "connection", stopwatch.Elapsed));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(BuildRefreshResult(
+                false,
+                queryName,
+                queryTable is not null ? "query-table" : "connection",
+                stopwatch.Elapsed,
+                new OperationError(
+                    Code: "query_refresh_failed",
+                    Message: $"Failed to refresh query '{queryName}'.",
+                    Detail: ex.Message,
+                    Source: nameof(ComWorkbookHandle))));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(queryTable);
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+    public async Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var originalConnectionCounts = SnapshotConnectionNameCounts();
+        var tempSheetName = BuildTempSheetName(request.TempQueryName);
+
+        try
+        {
+            await SetQueryFormulaAsync(request.TempQueryName, BuildProbeFormula(request), cancellationToken);
+
+            object? worksheet = null;
+            object? listObject = null;
+            try
+            {
+                worksheet = CreateWorksheet(tempSheetName);
+                listObject = LoadQueryPreviewTable(worksheet, request.TempQueryName);
+                var rangeData = ReadListObjectRange(listObject, tempSheetName);
+
+                return new ProbeResult(
+                    Succeeded: true,
+                    TargetQuery: request.TargetQueryName,
+                    TempQuery: request.TempQueryName,
+                    Preview: rangeData);
+            }
+            catch (Exception ex)
+            {
+                return new ProbeResult(
+                    Succeeded: false,
+                    TargetQuery: request.TargetQueryName,
+                    TempQuery: request.TempQueryName,
+                    Preview: null,
+                    Error: new OperationError(
+                        Code: "query_probe_failed",
+                        Message: $"Failed to probe query '{request.TargetQueryName}'.",
+                        Detail: ex.Message,
+                        Source: nameof(ComWorkbookHandle)));
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(listObject);
+                if (request.CleanupAfterRun)
+                {
+                    DeleteWorksheetIfExists(tempSheetName);
+                }
+
+                ComDispatch.ReleaseIfComObject(worksheet);
+            }
+        }
+        finally
+        {
+            if (request.CleanupAfterRun)
+            {
+                await CleanupTempProbeArtifactsAsync(request.TempQueryName, originalConnectionCounts, cancellationToken);
+            }
+        }
+    }
     public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -271,8 +386,377 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             FailedNames: failedNames,
             Errors: errors));
     }
-    public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => throw NotYetImplemented();
-    public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => throw NotYetImplemented();
+    public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            var values = ComDispatch.GetProperty<object?>(range!, "Value2");
+            return Task.FromResult(new RangeData(
+                SheetName: ComDispatch.GetProperty<string>(worksheet, "Name"),
+                Address: GetOptionalProperty(range!, "Address")?.ToString() ?? address,
+                Values: ConvertToMatrix(values)));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+    public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            if (GetElementCount(values) == 1)
+            {
+                ComDispatch.SetProperty(range!, "Value2", FirstValue(values));
+            }
+            else
+            {
+                ComDispatch.SetProperty(range!, "Value2", values);
+            }
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private RefreshResult BuildRefreshResult(bool succeeded, string queryName, string mode, TimeSpan duration, OperationError? error = null) =>
+        new(succeeded, queryName, mode, duration, error);
+
+    private void WaitForAsyncQueries(TimeSpan? timeout, CancellationToken cancellationToken, Stopwatch stopwatch)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        object? application = null;
+        try
+        {
+            application = ComDispatch.GetProperty<object>(_workbook, "Application");
+            ComDispatch.InvokeMethod(application, "CalculateUntilAsyncQueriesDone");
+        }
+        finally
+        {
+            // Do not final-release the Application RCW obtained through the workbook.
+            // The owning Excel session keeps the application object alive for the duration
+            // of the operation and must remain valid for later state restoration.
+        }
+
+        if (timeout is { } maxDuration && stopwatch.Elapsed > maxDuration)
+        {
+            throw new TimeoutException($"Excel query work exceeded the requested timeout of {maxDuration}.");
+        }
+    }
+
+    private object? FindConnectionByQueryName(string queryName)
+    {
+        var targetConnectionName = $"Query - {queryName}";
+        var connections = GetCollection(_workbook, "Connections");
+        try
+        {
+            foreach (var connection in ComDispatch.Enumerate(connections))
+            {
+                if (string.Equals(GetStringProperty(connection, "Name"), targetConnectionName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return connection;
+                }
+
+                ComDispatch.ReleaseIfComObject(connection);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connections);
+        }
+
+        return null;
+    }
+
+    private object? FindQueryTableByQueryName(string queryName)
+    {
+        var sheets = GetCollection(_workbook, "Sheets");
+        try
+        {
+            foreach (var sheet in ComDispatch.Enumerate(sheets))
+            {
+                object? listObjects = null;
+                try
+                {
+                    if (!ComDispatch.TryGetProperty(sheet, "ListObjects", out listObjects) || listObjects is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var table in ComDispatch.Enumerate(listObjects))
+                    {
+                        object? queryTable = null;
+                        try
+                        {
+                            if (TryGetQueryName(table, out var candidateQueryName) &&
+                                string.Equals(candidateQueryName, queryName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                queryTable = ComDispatch.GetProperty<object>(table, "QueryTable");
+                                return queryTable;
+                            }
+                        }
+                        finally
+                        {
+                            ComDispatch.ReleaseIfComObject(table);
+                        }
+                    }
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(listObjects);
+                    ComDispatch.ReleaseIfComObject(sheet);
+                }
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(sheets);
+        }
+
+        return null;
+    }
+
+    private string BuildProbeFormula(QueryProbeRequest request)
+    {
+        var escapedName = request.TargetQueryName.Replace("\"", "\"\"");
+        return $"""
+let
+    Source = #"{escapedName}",
+    Preview = Table.FirstN(Source, {request.MaxRows})
+in
+    Preview
+""";
+    }
+
+    private object CreateWorksheet(string sheetName)
+    {
+        var worksheets = GetCollection(_workbook, "Worksheets");
+        try
+        {
+            var worksheet = ComDispatch.InvokeMethod(worksheets, "Add")
+                ?? throw new InvalidOperationException("Excel did not return a worksheet when adding a probe sheet.");
+            ComDispatch.SetProperty(worksheet, "Name", sheetName);
+            return worksheet;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+    }
+
+    private object LoadQueryPreviewTable(object worksheet, string queryName)
+    {
+        var listObjects = ComDispatch.GetProperty<object>(worksheet, "ListObjects");
+        object? destination = null;
+        try
+        {
+            destination = ComDispatch.GetProperty<object>(worksheet, "Range", "A1");
+            var connectionString = BuildMashupConnectionString(queryName);
+            var listObject = ComDispatch.InvokeMethod(listObjects, "Add", 0, connectionString, true, 1, destination)
+                ?? throw new InvalidOperationException($"Excel did not create a probe table for '{queryName}'.");
+
+            object? queryTable = null;
+            try
+            {
+                queryTable = ComDispatch.GetProperty<object>(listObject, "QueryTable");
+                ComDispatch.SetProperty(queryTable, "CommandType", 2);
+                ComDispatch.SetProperty(queryTable, "CommandText", new[] { $"SELECT * FROM [{queryName}]" });
+                ComDispatch.InvokeMethod(queryTable, "Refresh", false);
+                return listObject;
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(queryTable);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(destination);
+            ComDispatch.ReleaseIfComObject(listObjects);
+        }
+    }
+
+    private RangeData ReadListObjectRange(object listObject, string fallbackSheetName)
+    {
+        object? range = null;
+        object? worksheet = null;
+        try
+        {
+            range = ComDispatch.GetProperty<object>(listObject, "Range");
+            worksheet = ComDispatch.GetProperty<object>(range, "Worksheet");
+            var values = ComDispatch.GetProperty<object?>(range, "Value2");
+            return new RangeData(
+                SheetName: GetOptionalProperty(worksheet, "Name")?.ToString() ?? fallbackSheetName,
+                Address: GetOptionalProperty(range, "Address")?.ToString() ?? "$A$1",
+                Values: ConvertToMatrix(values));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+            ComDispatch.ReleaseIfComObject(range);
+        }
+    }
+
+    private async Task CleanupTempProbeArtifactsAsync(string tempQueryName, Dictionary<string, int> originalConnectionCounts, CancellationToken cancellationToken)
+    {
+        await CleanupTempQueriesAsync(tempQueryName, cancellationToken);
+        DeleteExtraConnections(originalConnectionCounts);
+    }
+
+    private void DeleteWorksheetIfExists(string sheetName)
+    {
+        object? worksheet = null;
+        try
+        {
+            worksheet = FindWorksheetByName(sheetName);
+            if (worksheet is not null)
+            {
+                ComDispatch.InvokeMethod(worksheet, "Delete");
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private void DeleteExtraConnections(Dictionary<string, int> originalConnectionCounts)
+    {
+        var connections = GetCollection(_workbook, "Connections");
+        try
+        {
+            var currentCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var connection in ComDispatch.Enumerate(connections))
+            {
+                try
+                {
+                    var name = GetStringProperty(connection, "Name");
+                    currentCounts.TryGetValue(name, out var seenCount);
+                    seenCount++;
+                    currentCounts[name] = seenCount;
+
+                    originalConnectionCounts.TryGetValue(name, out var originalCount);
+                    if (seenCount > originalCount)
+                    {
+                        ComDispatch.InvokeMethod(connection, "Delete");
+                    }
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(connection);
+                }
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connections);
+        }
+    }
+
+    private Dictionary<string, int> SnapshotConnectionNameCounts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var connection in EnumerateConnectionSummaries())
+        {
+            counts.TryGetValue(connection.Name, out var current);
+            counts[connection.Name] = current + 1;
+        }
+
+        return counts;
+    }
+
+    private object GetWorksheet(string? sheetName)
+    {
+        if (!string.IsNullOrWhiteSpace(sheetName))
+        {
+            var worksheet = FindWorksheetByName(sheetName);
+            if (worksheet is null)
+            {
+                throw new InvalidOperationException($"Worksheet '{sheetName}' was not found.");
+            }
+
+            return worksheet;
+        }
+
+        return ComDispatch.GetProperty<object>(_workbook, "ActiveSheet");
+    }
+
+    private object? FindWorksheetByName(string sheetName)
+    {
+        var worksheets = GetCollection(_workbook, "Worksheets");
+        try
+        {
+            foreach (var worksheet in ComDispatch.Enumerate(worksheets))
+            {
+                if (string.Equals(GetStringProperty(worksheet, "Name"), sheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return worksheet;
+                }
+
+                ComDispatch.ReleaseIfComObject(worksheet);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+
+        return null;
+    }
+
+    private static string BuildMashupConnectionString(string queryName) =>
+        $"OLEDB;Provider=Microsoft.Mashup.OleDb.1;Data Source=$Workbook$;Location={queryName};Extended Properties=\"\"";
+
+    private static string BuildTempSheetName(string tempQueryName)
+    {
+        const string suffix = "_sheet";
+        var candidate = tempQueryName + suffix;
+        return candidate.Length <= 31 ? candidate : candidate[..31];
+    }
+
+    private static object?[,] ConvertToMatrix(object? value)
+    {
+        if (value is object?[,] matrix)
+        {
+            return matrix;
+        }
+
+        var singleValue = (object?[,])Array.CreateInstance(typeof(object), [1, 1], [1, 1]);
+        singleValue[1, 1] = value;
+        return singleValue;
+    }
+
+    private static int GetElementCount(Array values)
+    {
+        var count = 1;
+        for (var dimension = 0; dimension < values.Rank; dimension++)
+        {
+            count *= values.GetLength(dimension);
+        }
+
+        return count;
+    }
+
+    private static object? FirstValue(object?[,] values) =>
+        values[values.GetLowerBound(0), values.GetLowerBound(1)];
 
     private IEnumerable<TableSummary> EnumerateTables()
     {

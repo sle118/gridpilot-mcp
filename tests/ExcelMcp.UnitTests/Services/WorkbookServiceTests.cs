@@ -71,4 +71,53 @@ public sealed class WorkbookServiceTests
         Assert.Equal(2, result.DeletedCount);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
     }
+
+    [Fact]
+    public async Task RefreshQueryAsync_ForwardsOptionsToWorkbookHandle()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var options = new RefreshOptions(Silent: false, PreferSynchronousTableRefresh: false, Timeout: TimeSpan.FromSeconds(5));
+
+        var result = await sut.RefreshQueryAsync("C:/temp/book.xlsx", "SalesQuery", options);
+
+        Assert.True(result.Succeeded);
+        var call = Assert.Single(fakeWorkbook.RefreshCalls);
+        Assert.Equal("SalesQuery", call.QueryName);
+        Assert.Equal(options, call.Options);
+        Assert.Empty(session.PushedOptions);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_UsesQuietSessionScopeWhenSilent()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        await sut.RefreshQueryAsync("C:/temp/book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        var scope = Assert.Single(session.PushedOptions);
+        Assert.False(scope.DisplayAlerts);
+        Assert.False(scope.ScreenUpdating);
+        Assert.False(scope.EnableEvents);
+        Assert.Equal(1, session.PopCallCount);
+    }
+
+    [Fact]
+    public async Task TryRunQueryAsync_UsesQuietSessionScope()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        await sut.TryRunQueryAsync("C:/temp/book.xlsx", "SalesQuery", "tmp_probe");
+
+        var scope = Assert.Single(session.PushedOptions);
+        Assert.False(scope.DisplayAlerts);
+        Assert.False(scope.ScreenUpdating);
+        Assert.False(scope.EnableEvents);
+        Assert.Equal(1, session.PopCallCount);
+    }
 }

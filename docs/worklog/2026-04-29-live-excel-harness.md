@@ -28,3 +28,4 @@ Build the first opt-in live Excel harness around the tracked workbook fixture, i
 
 ## Next
 - Expand the live harness to cover targeted refresh and query probing once those production behaviors exist.
+- Keep concurrent agent-plus-human workbook operation on the roadmap as an explicit design target, not an implicit future assumption.

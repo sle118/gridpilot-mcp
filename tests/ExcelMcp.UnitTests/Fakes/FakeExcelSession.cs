@@ -6,6 +6,9 @@ namespace ExcelMcp.UnitTests.Fakes;
 internal sealed class FakeExcelSession : IExcelSession
 {
     public required IWorkbookHandle Workbook { get; init; }
+    public List<SessionOptions> PushedOptions { get; } = [];
+    public int PopCallCount { get; private set; }
+    public List<TimeSpan> WaitCalls { get; } = [];
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
@@ -18,12 +21,21 @@ internal sealed class FakeExcelSession : IExcelSession
     public Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default) =>
         Task.FromResult(Workbook);
 
-    public Task<ScopedSessionToken> PushOptionsAsync(SessionOptions options, CancellationToken cancellationToken = default) =>
-        Task.FromResult(ScopedSessionToken.New());
+    public Task<ScopedSessionToken> PushOptionsAsync(SessionOptions options, CancellationToken cancellationToken = default)
+    {
+        PushedOptions.Add(options);
+        return Task.FromResult(ScopedSessionToken.New());
+    }
 
-    public Task PopOptionsAsync(ScopedSessionToken token, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task PopOptionsAsync(ScopedSessionToken token, CancellationToken cancellationToken = default)
+    {
+        PopCallCount++;
+        return Task.CompletedTask;
+    }
 
-    public Task WaitForAsyncQueriesAsync(TimeSpan timeout, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task WaitForAsyncQueriesAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        WaitCalls.Add(timeout);
+        return Task.CompletedTask;
+    }
 }

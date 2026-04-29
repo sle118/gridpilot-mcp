@@ -14,8 +14,10 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - a first mock-based service example
 - a first COM-backed Excel session wrapper with scoped application-state restore for `DisplayAlerts`, `EnableEvents`, and `ScreenUpdating`
 - workbook inventory for sheets, tables, connections, and queries over the COM workbook wrapper
+- targeted query refresh with structured success/failure results
+- diagnostic query probing via temp-query creation, preview load, and cleanup
 - temp-query cleanup with structured partial-failure reporting
-- an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, and cleanup
+- an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, and probing
 - branding assets now folded into `branding/assets/`
 
 ## Important naming note
@@ -33,9 +35,12 @@ The intended architecture remains:
 - workbook kept as data plane, not orchestration layer
 - mock-first test strategy
 - optional local-only live Excel validation tier
+- eventual safe coexistence between agent operations and active human editing in the same live workbook session
 
 ## Immediate gaps
 
 - no MCP transport implementation yet
-- no query probing or targeted refresh implementation yet
+- no concurrency/coordination policy yet for safe agent work while a human is actively editing the same workbook
+- no explicit shared-session safeguards yet for mutating operations such as refresh, probe, cleanup, or future writes
+- no broad agent-facing workbook edit/range workflow surface yet beyond the narrow internal seams used by the harness
 - no first backlog/delegation packet set yet

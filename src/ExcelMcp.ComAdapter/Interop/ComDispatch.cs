@@ -20,6 +20,18 @@ internal static class ComDispatch
         return value is null ? default! : (T)value;
     }
 
+    public static T GetProperty<T>(object target, string propertyName, params object?[]? args)
+    {
+        var value = target.GetType().InvokeMember(
+            propertyName,
+            BindingFlags.GetProperty,
+            binder: null,
+            target,
+            args);
+
+        return value is null ? default! : (T)value;
+    }
+
     public static bool TryGetProperty(object target, string propertyName, out object? value)
     {
         var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);

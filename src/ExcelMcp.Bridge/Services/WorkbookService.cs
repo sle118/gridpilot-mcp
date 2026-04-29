@@ -7,6 +7,10 @@ namespace ExcelMcp.Bridge.Services;
 public sealed class WorkbookService
 {
     private readonly IExcelSession _session;
+    private static readonly SessionOptions QuietSessionOptions = new(
+        DisplayAlerts: false,
+        ScreenUpdating: false,
+        EnableEvents: false);
 
     public WorkbookService(IExcelSession session)
     {
@@ -43,8 +47,26 @@ public sealed class WorkbookService
         return await workbook.ListConnectionsAsync(cancellationToken);
     }
 
+    public async Task<RefreshResult> RefreshQueryAsync(string workbookPath, string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        options ??= new RefreshOptions();
+
+        if (options.Silent)
+        {
+            await using var _ = await _session.BeginScopeAsync(QuietSessionOptions, cancellationToken);
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            return await workbook.RefreshQueryAsync(queryName, options, cancellationToken);
+        }
+
+        await using (var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken))
+        {
+            return await workbook.RefreshQueryAsync(queryName, options, cancellationToken);
+        }
+    }
+
     public async Task<ProbeResult> TryRunQueryAsync(string workbookPath, string queryName, string tempPrefix, CancellationToken cancellationToken = default)
     {
+        await using var _ = await _session.BeginScopeAsync(QuietSessionOptions, cancellationToken);
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
         var tempName = $"{tempPrefix}_{queryName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
         return await workbook.RunQueryProbeAsync(new QueryProbeRequest(queryName, tempName), cancellationToken);
