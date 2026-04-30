@@ -230,4 +230,83 @@ public sealed class LiveAttachedSessionSafetyTests
         var name = await context.WorkbookService.GetNameAsync(context.WorkbookPath, "GridPilotAttachedName");
         Assert.Equal("GridPilotAttachedName", name.Name);
     }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_TableReadAndGet_AreAllowedWithoutApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var table = (await context.WorkbookService.ListTablesAsync(context.WorkbookPath))
+            .First(entry => string.Equals(entry.SheetName, "tbleWithErrorRemovedLoaded", StringComparison.OrdinalIgnoreCase));
+
+        var read = await context.WorkbookService.ReadTableAsync(context.WorkbookPath, table.TableName);
+        var detail = await context.WorkbookService.GetTableAsync(context.WorkbookPath, table.TableName);
+
+        Assert.Equal(table.TableName, read.TableName);
+        Assert.Equal(table.TableName, detail.TableName);
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_TableMutations_FailBeforeApproval_AndSucceedAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        const string sheetName = "tbleWithErrorRemovedLoaded";
+        const string tableName = "GridPilotAttachedTable";
+
+        await context.GrantApprovalAsync();
+        await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, "AB1:AC3", new object?[,]
+                {
+                    { "Name", "Value" },
+                    { "One", 1d },
+                    { "Two", 2d }
+                })
+            ]));
+        await context.RevokeApprovalAsync();
+
+        var blockedCreate = await context.WorkbookService.CreateTableAsync(
+            context.WorkbookPath,
+            new TableCreateRequest(tableName, sheetName, "AB1:AC3"));
+        Assert.False(blockedCreate.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedCreate.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var created = await context.WorkbookService.CreateTableAsync(
+            context.WorkbookPath,
+            new TableCreateRequest(tableName, sheetName, "AB1:AC3"));
+        Assert.True(created.Succeeded);
+
+        await context.RevokeApprovalAsync();
+        var blockedAppend = await context.WorkbookService.AppendTableRowsAsync(
+            context.WorkbookPath,
+            new TableRowsWriteRequest(tableName, new object?[,] { { "Three", 3d } }));
+        Assert.False(blockedAppend.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedAppend.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        Assert.True((await context.WorkbookService.AppendTableRowsAsync(
+            context.WorkbookPath,
+            new TableRowsWriteRequest(tableName, new object?[,] { { "Three", 3d } }))).Succeeded);
+
+        Assert.True((await context.WorkbookService.ResizeTableAsync(
+            context.WorkbookPath,
+            new TableResizeRequest(tableName, sheetName, "AB1:AC5"))).Succeeded);
+
+        Assert.True((await context.WorkbookService.ReplaceTableRowsAsync(
+            context.WorkbookPath,
+            new TableRowsWriteRequest(tableName, new object?[,] { { "Four", 4d }, { "Five", 5d }, { "Six", 6d } }))).Succeeded);
+
+        Assert.True((await context.WorkbookService.SetTableOptionsAsync(
+            context.WorkbookPath,
+            new TableOptionsUpdateRequest(tableName, ShowTotals: true))).Succeeded);
+
+        var read = await context.WorkbookService.ReadTableAsync(context.WorkbookPath, tableName);
+        Assert.Equal(3, read.Rows.Count);
+        Assert.True(read.HasTotalsRow);
+    }
 }

@@ -98,4 +98,64 @@ public sealed class LiveWorkbookEditTests
         var names = await context.WorkbookService.ListNamesAsync(context.WorkbookPath);
         Assert.DoesNotContain(names, entry => string.Equals(entry.Name, "GridPilotTempName", StringComparison.OrdinalIgnoreCase));
     }
+
+    [LiveExcelFact]
+    public async Task TableLifecycle_CreateAppendResizeReplaceAndOptions_Persist()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        const string sheetName = "tbleWithErrorRemovedLoaded";
+        const string tableName = "GridPilotTempTable";
+
+        await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, "Z1:AA3", new object?[,]
+                {
+                    { "Name", "Value" },
+                    { "One", 1d },
+                    { "Two", 2d }
+                })
+            ]));
+
+        var created = await context.WorkbookService.CreateTableAsync(
+            context.WorkbookPath,
+            new TableCreateRequest(tableName, sheetName, "Z1:AA3"));
+
+        Assert.True(created.Succeeded);
+
+        var detail = await context.WorkbookService.GetTableAsync(context.WorkbookPath, tableName);
+        Assert.Equal(2, detail.ColumnCount);
+        Assert.Equal(2, detail.RowCount);
+
+        var appended = await context.WorkbookService.AppendTableRowsAsync(
+            context.WorkbookPath,
+            new TableRowsWriteRequest(tableName, new object?[,] { { "Three", 3d } }));
+
+        Assert.True(appended.Succeeded);
+
+        var resized = await context.WorkbookService.ResizeTableAsync(
+            context.WorkbookPath,
+            new TableResizeRequest(tableName, sheetName, "Z1:AA5"));
+
+        Assert.True(resized.Succeeded);
+
+        var replaced = await context.WorkbookService.ReplaceTableRowsAsync(
+            context.WorkbookPath,
+            new TableRowsWriteRequest(tableName, new object?[,] { { "Four", 4d }, { "Five", 5d }, { "Six", 6d } }));
+
+        Assert.True(replaced.Succeeded);
+
+        var options = await context.WorkbookService.SetTableOptionsAsync(
+            context.WorkbookPath,
+            new TableOptionsUpdateRequest(tableName, ShowTotals: true));
+
+        Assert.True(options.Succeeded);
+
+        var reread = await context.WorkbookService.ReadTableAsync(context.WorkbookPath, tableName);
+        Assert.Equal(3, reread.Rows.Count);
+        Assert.Equal("Four", reread.Rows[0][0]?.ToString());
+        Assert.Equal(6d, Convert.ToDouble(reread.Rows[2][1]));
+        Assert.True(reread.HasTotalsRow);
+    }
 }

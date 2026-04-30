@@ -288,6 +288,149 @@ public sealed class WorkbookService
         return await workbook.ReadTableAsync(tableName, cancellationToken);
     }
 
+    public async Task<TableDetailResult> GetTableAsync(
+        string workbookPath,
+        string tableName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetTableAsync(tableName, cancellationToken);
+    }
+
+    public async Task<TableMutationResult> CreateTableAsync(
+        string workbookPath,
+        TableCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, request.TableName, "create", request.SheetName, request.Address, HasHeaders: request.HasHeaders, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.CreateTableAsync(request, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new TableMutationResult(true, workbookPath, request.TableName, "create", request.SheetName, request.Address, HasHeaders: request.HasHeaders);
+        }
+        catch (Exception ex)
+        {
+            return BuildTableMutationError(workbookPath, request.TableName, "create", request.SheetName, request.Address, null, request.HasHeaders, null, ex);
+        }
+    }
+
+    public async Task<TableMutationResult> ResizeTableAsync(
+        string workbookPath,
+        TableResizeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, request.TableName, "resize", request.SheetName, request.Address, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.ResizeTableAsync(request, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new TableMutationResult(true, workbookPath, request.TableName, "resize", request.SheetName, request.Address);
+        }
+        catch (Exception ex)
+        {
+            return BuildTableMutationError(workbookPath, request.TableName, "resize", request.SheetName, request.Address, null, null, null, ex);
+        }
+    }
+
+    public async Task<TableMutationResult> AppendTableRowsAsync(
+        string workbookPath,
+        TableRowsWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, request.TableName, "append_rows", RowCount: GetRowCount(request.Values), Error: safetyError);
+        }
+
+        try
+        {
+            ValidateValues(request.Values, request.TableName);
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await ValidateTableWriteShapeAsync(workbook, request, cancellationToken);
+            await workbook.AppendTableRowsAsync(request, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new TableMutationResult(true, workbookPath, request.TableName, "append_rows", RowCount: GetRowCount(request.Values));
+        }
+        catch (Exception ex)
+        {
+            return BuildTableMutationError(workbookPath, request.TableName, "append_rows", null, null, GetRowCount(request.Values), null, null, ex);
+        }
+    }
+
+    public async Task<TableMutationResult> ReplaceTableRowsAsync(
+        string workbookPath,
+        TableRowsWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, request.TableName, "replace_rows", RowCount: GetRowCount(request.Values), Error: safetyError);
+        }
+
+        try
+        {
+            ValidateValues(request.Values, request.TableName);
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await ValidateTableWriteShapeAsync(workbook, request, cancellationToken);
+            await workbook.ReplaceTableRowsAsync(request, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new TableMutationResult(true, workbookPath, request.TableName, "replace_rows", RowCount: GetRowCount(request.Values));
+        }
+        catch (Exception ex)
+        {
+            return BuildTableMutationError(workbookPath, request.TableName, "replace_rows", null, null, GetRowCount(request.Values), null, null, ex);
+        }
+    }
+
+    public async Task<TableMutationResult> SetTableOptionsAsync(
+        string workbookPath,
+        TableOptionsUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, request.TableName, "set_options", HasHeaders: request.HasHeaders, ShowTotals: request.ShowTotals, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SetTableOptionsAsync(request, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new TableMutationResult(true, workbookPath, request.TableName, "set_options", HasHeaders: request.HasHeaders, ShowTotals: request.ShowTotals);
+        }
+        catch (Exception ex)
+        {
+            return BuildTableMutationError(workbookPath, request.TableName, "set_options", null, null, null, request.HasHeaders, request.ShowTotals, ex);
+        }
+    }
+
     public async Task<RangeWriteResult> WriteRangesAsync(
         string workbookPath,
         RangeWriteRequest request,
@@ -361,6 +504,21 @@ public sealed class WorkbookService
         }
     }
 
+    private static async Task ValidateTableWriteShapeAsync(
+        IWorkbookHandle workbook,
+        TableRowsWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var table = await workbook.GetTableAsync(request.TableName, cancellationToken);
+        var expectedColumns = table.ColumnCount;
+        var actualColumns = GetColumnCount(request.Values);
+        if (actualColumns != expectedColumns)
+        {
+            throw new InvalidOperationException(
+                $"Table '{request.TableName}' has {expectedColumns} columns, but provided rows have {actualColumns} columns.");
+        }
+    }
+
     private static int GetRowCount(Array values) =>
         values.GetLength(0);
 
@@ -405,6 +563,32 @@ public sealed class WorkbookService
             new OperationError(
                 Code: $"name_{action}_failed",
                 Message: $"Failed to {action} name '{name}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static TableMutationResult BuildTableMutationError(
+        string workbookPath,
+        string tableName,
+        string action,
+        string? sheetName,
+        string? address,
+        int? rowCount,
+        bool? hasHeaders,
+        bool? showTotals,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            tableName,
+            action,
+            sheetName,
+            address,
+            rowCount,
+            hasHeaders,
+            showTotals,
+            new OperationError(
+                Code: $"table_{action}_failed",
+                Message: $"Failed to {action.Replace('_', ' ')} for table '{tableName}'.",
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
 }

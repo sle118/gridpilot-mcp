@@ -22,6 +22,11 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string Name, string RefersTo, string? SheetName)> CreatedNames { get; } = [];
     public List<(string Name, string RefersTo, string? SheetName)> UpdatedNames { get; } = [];
     public List<(string Name, string? SheetName)> DeletedNames { get; } = [];
+    public List<TableCreateRequest> CreatedTables { get; } = [];
+    public List<TableResizeRequest> ResizedTables { get; } = [];
+    public List<TableRowsWriteRequest> AppendedTableRows { get; } = [];
+    public List<TableRowsWriteRequest> ReplacedTableRows { get; } = [];
+    public List<TableOptionsUpdateRequest> UpdatedTableOptions { get; } = [];
 
     public Func<string, Task<QueryDefinition>> OnGetQueryAsync { get; set; } =
         name => Task.FromResult(new QueryDefinition(name, "let Source = 1 in Source"));
@@ -55,6 +60,24 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Func<string, Task<TableReadResult>> OnReadTableAsync { get; set; } =
         tableName => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], [[1d, 2d]], false));
+
+    public Func<string, Task<TableDetailResult>> OnGetTableAsync { get; set; } =
+        tableName => Task.FromResult(new TableDetailResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], 1, 2, true, false, false, null));
+
+    public Func<TableCreateRequest, Task> OnCreateTableAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<TableResizeRequest, Task> OnResizeTableAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<TableRowsWriteRequest, Task> OnAppendTableRowsAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<TableRowsWriteRequest, Task> OnReplaceTableRowsAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<TableOptionsUpdateRequest, Task> OnSetTableOptionsAsync { get; set; } =
+        _ => Task.CompletedTask;
 
     public Func<string, object?[,], string?, Task> OnWriteRangeAsync { get; set; } =
         (address, values, sheetName) => Task.CompletedTask;
@@ -113,6 +136,39 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) =>
         OnReadTableAsync(tableName);
+
+    public Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default) =>
+        OnGetTableAsync(tableName);
+
+    public Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        CreatedTables.Add(request);
+        return OnCreateTableAsync(request);
+    }
+
+    public Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default)
+    {
+        ResizedTables.Add(request);
+        return OnResizeTableAsync(request);
+    }
+
+    public Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        AppendedTableRows.Add(request);
+        return OnAppendTableRowsAsync(request);
+    }
+
+    public Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        ReplacedTableRows.Add(request);
+        return OnReplaceTableRowsAsync(request);
+    }
+
+    public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        UpdatedTableOptions.Add(request);
+        return OnSetTableOptionsAsync(request);
+    }
 
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
     {

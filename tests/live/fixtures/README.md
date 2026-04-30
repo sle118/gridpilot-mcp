@@ -23,3 +23,9 @@ Rules for maintainers:
 - Treat the tracked workbook as the immutable baseline fixture
 - Live tests must copy it to a temp workbook before opening it in Excel
 - Future agents may extend the workbook intentionally, but they must update the live assertions and this metadata note when the baseline contract changes
+
+Current disposable table-mutation anchors:
+
+- live table lifecycle tests use free columns on copied temp workbooks rather than mutating the tracked baseline structure
+- `tbleWithErrorRemovedLoaded!Z:AA` is the current create-new temp-table range
+- `tbleWithErrorRemovedLoaded!AB:AC` is the current attached-session temp-table range

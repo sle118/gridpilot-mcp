@@ -45,7 +45,13 @@ public sealed class McpToolServerTests
                 ToolNames.QueryRunProbe,
                 ToolNames.QueryCleanupTemp,
                 ToolNames.QuerySetFormula,
+                ToolNames.TableGet,
                 ToolNames.TableRead,
+                ToolNames.TableCreate,
+                ToolNames.TableResize,
+                ToolNames.TableAppendRows,
+                ToolNames.TableReplaceRows,
+                ToolNames.TableSetOptions,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
                 ToolNames.AttachedSessionGrantMutation,
@@ -313,6 +319,83 @@ public sealed class McpToolServerTests
         Assert.Equal("SalesTable", result.StructuredContent.GetProperty("tableName").GetString());
         Assert.Equal("Column1", result.StructuredContent.GetProperty("headers")[0].GetString());
         Assert.Equal(1d, result.StructuredContent.GetProperty("rows")[0][0].GetDouble());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableGet_ReturnsStructuredMetadata()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableGet,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("SalesTable", result.StructuredContent.GetProperty("tableName").GetString());
+        Assert.Equal(2, result.StructuredContent.GetProperty("columnCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableCreate_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableCreate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "GridPilotTable",
+                sheetName = "Sheet1",
+                address = "Z1:AA2"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Single(fakeWorkbook.CreatedTables);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableAppendRows_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableAppendRows,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable",
+                values = new object?[][] { new object?[] { "A", "B" } }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Single(fakeWorkbook.AppendedTableRows);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableSetOptions_ReturnsStructuredErrorWhenNoOptionsWereProvided()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableSetOptions,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable"
+            }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]

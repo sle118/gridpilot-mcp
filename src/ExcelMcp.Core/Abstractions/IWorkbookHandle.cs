@@ -25,7 +25,13 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default);
     Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default);
     Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default);
+    Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default);
+    Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default);
+    Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default);
+    Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default);
+    Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default);
+    Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default);
 
     Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
     Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);

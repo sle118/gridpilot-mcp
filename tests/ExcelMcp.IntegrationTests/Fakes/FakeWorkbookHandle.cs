@@ -17,6 +17,11 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string Name, string RefersTo, string? SheetName)> CreatedNames { get; } = [];
     public List<(string Name, string RefersTo, string? SheetName)> UpdatedNames { get; } = [];
     public List<(string Name, string? SheetName)> DeletedNames { get; } = [];
+    public List<TableCreateRequest> CreatedTables { get; } = [];
+    public List<TableResizeRequest> ResizedTables { get; } = [];
+    public List<TableRowsWriteRequest> AppendedTableRows { get; } = [];
+    public List<TableRowsWriteRequest> ReplacedTableRows { get; } = [];
+    public List<TableOptionsUpdateRequest> UpdatedTableOptions { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
     public int SaveCallCount { get; private set; }
@@ -69,6 +74,39 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) =>
         Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], [[1d, 2d]], false));
+
+    public Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new TableDetailResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], 1, 2, true, false, false, null));
+
+    public Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        CreatedTables.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default)
+    {
+        ResizedTables.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        AppendedTableRows.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        ReplacedTableRows.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        UpdatedTableOptions.Add(request);
+        return Task.CompletedTask;
+    }
 
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
     {

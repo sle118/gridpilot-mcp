@@ -520,6 +520,212 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
+    public Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        try
+        {
+            table = FindTableByName(tableName)
+                ?? throw new InvalidOperationException($"Table '{tableName}' was not found.");
+
+            return Task.FromResult(BuildTableDetailResult(table, tableName));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    public Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (FindTableByName(request.TableName) is { } existing)
+        {
+            ComDispatch.ReleaseIfComObject(existing);
+            throw new InvalidOperationException($"Table '{request.TableName}' already exists.");
+        }
+
+        object? worksheet = null;
+        object? range = null;
+        object? listObjects = null;
+        object? table = null;
+        try
+        {
+            worksheet = GetWorksheet(request.SheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", request.Address);
+            listObjects = GetCollection(worksheet, "ListObjects");
+            table = ComDispatch.InvokeMethod(listObjects, "Add", 1, range, Type.Missing, request.HasHeaders ? 1 : 2)
+                ?? throw new InvalidOperationException($"Excel did not create table '{request.TableName}'.");
+            ComDispatch.SetProperty(table, "Name", request.TableName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(table);
+            ComDispatch.ReleaseIfComObject(listObjects);
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        object? worksheet = null;
+        object? range = null;
+        try
+        {
+            table = FindTableByName(request.TableName)
+                ?? throw new InvalidOperationException($"Table '{request.TableName}' was not found.");
+            worksheet = GetWorksheet(request.SheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", request.Address);
+            ComDispatch.InvokeMethod(table, "Resize", range);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    public Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        object? listRows = null;
+        try
+        {
+            table = FindTableByName(request.TableName)
+                ?? throw new InvalidOperationException($"Table '{request.TableName}' was not found.");
+            listRows = GetCollection(table, "ListRows");
+
+            for (var rowIndex = 0; rowIndex < request.Values.GetLength(0); rowIndex++)
+            {
+                object? listRow = null;
+                object? rowRange = null;
+                try
+                {
+                    listRow = ComDispatch.InvokeMethod(listRows, "Add")
+                        ?? throw new InvalidOperationException($"Excel did not append a row to table '{request.TableName}'.");
+                    rowRange = ComDispatch.GetProperty<object>(listRow, "Range");
+                    ComDispatch.SetProperty(rowRange, "Value2", ExtractRowMatrix(request.Values, rowIndex));
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(rowRange);
+                    ComDispatch.ReleaseIfComObject(listRow);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(listRows);
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    public Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        object? listRows = null;
+        object? bodyRange = null;
+        try
+        {
+            table = FindTableByName(request.TableName)
+                ?? throw new InvalidOperationException($"Table '{request.TableName}' was not found.");
+            listRows = GetCollection(table, "ListRows");
+
+            var desiredCount = request.Values.GetLength(0);
+            var currentCount = ComDispatch.GetProperty<int>(listRows, "Count");
+
+            while (currentCount > desiredCount)
+            {
+                object? row = null;
+                try
+                {
+                    row = ComDispatch.GetProperty<object>(listRows, "Item", currentCount)
+                        ?? throw new InvalidOperationException($"Excel did not expose row {currentCount} for table '{request.TableName}'.");
+                    ComDispatch.InvokeMethod(row, "Delete");
+                    currentCount--;
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(row);
+                }
+            }
+
+            while (currentCount < desiredCount)
+            {
+                object? row = null;
+                try
+                {
+                    row = ComDispatch.InvokeMethod(listRows, "Add")
+                        ?? throw new InvalidOperationException($"Excel did not append a row to table '{request.TableName}'.");
+                    currentCount++;
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(row);
+                }
+            }
+
+            bodyRange = GetOptionalProperty(table, "DataBodyRange");
+            if (bodyRange is null)
+            {
+                throw new InvalidOperationException($"Table '{request.TableName}' does not expose a writable data body.");
+            }
+
+            ComDispatch.SetProperty(bodyRange, "Value2", request.Values);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(bodyRange);
+            ComDispatch.ReleaseIfComObject(listRows);
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        try
+        {
+            table = FindTableByName(request.TableName)
+                ?? throw new InvalidOperationException($"Table '{request.TableName}' was not found.");
+
+            if (request.HasHeaders.HasValue)
+            {
+                ComDispatch.SetProperty(table, "ShowHeaders", request.HasHeaders.Value);
+            }
+
+            if (request.ShowTotals.HasValue)
+            {
+                ComDispatch.SetProperty(table, "ShowTotals", request.ShowTotals.Value);
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
     public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -1318,6 +1524,52 @@ in
         }
     }
 
+    private static TableDetailResult BuildTableDetailResult(object table, string fallbackName)
+    {
+        object? worksheet = null;
+        object? headerRange = null;
+        object? bodyRange = null;
+        object? tableRange = null;
+        try
+        {
+            worksheet = GetOptionalProperty(table, "Parent");
+            headerRange = GetOptionalProperty(table, "HeaderRowRange");
+            bodyRange = GetOptionalProperty(table, "DataBodyRange");
+            tableRange = GetOptionalProperty(table, "Range");
+
+            var headers = headerRange is null
+                ? Array.Empty<string>()
+                : FlattenHeaderValues(ComDispatch.GetProperty<object?>(headerRange, "Value2"));
+            var rowCount = bodyRange is null
+                ? 0
+                : ConvertToMatrix(ComDispatch.GetProperty<object?>(bodyRange, "Value2")).GetLength(0);
+            var columnCount = headers.Count > 0
+                ? headers.Count
+                : bodyRange is null
+                    ? 0
+                    : ConvertToMatrix(ComDispatch.GetProperty<object?>(bodyRange, "Value2")).GetLength(1);
+
+            return new TableDetailResult(
+                TableName: GetStringProperty(table, "Name") is { Length: > 0 } actualName ? actualName : fallbackName,
+                SheetName: worksheet is null ? string.Empty : GetStringProperty(worksheet, "Name"),
+                Address: tableRange is null ? string.Empty : GetOptionalProperty(tableRange, "Address")?.ToString() ?? string.Empty,
+                Headers: headers,
+                RowCount: rowCount,
+                ColumnCount: columnCount,
+                HasHeaders: ToBoolean(GetOptionalProperty(table, "ShowHeaders")),
+                HasTotalsRow: ToBoolean(GetOptionalProperty(table, "ShowTotals")),
+                IsQueryBacked: TryGetQueryName(table, out var queryName),
+                QueryName: queryName);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(tableRange);
+            ComDispatch.ReleaseIfComObject(bodyRange);
+            ComDispatch.ReleaseIfComObject(headerRange);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
     private static IReadOnlyList<string> FlattenHeaderValues(object? value)
     {
         var matrix = ConvertToMatrix(value);
@@ -1345,6 +1597,18 @@ in
         }
 
         return rows;
+    }
+
+    private static object?[,] ExtractRowMatrix(object?[,] values, int rowIndex)
+    {
+        var columnCount = values.GetLength(1);
+        var row = new object?[1, columnCount];
+        for (var column = 0; column < columnCount; column++)
+        {
+            row[0, column] = values[rowIndex, column];
+        }
+
+        return row;
     }
 
     private static bool IsWorksheetObject(object value)

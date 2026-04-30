@@ -207,6 +207,19 @@ public sealed class McpToolServer
                 required = new[] { "workbookPath", "queryName", "formula" }
             })),
         new(
+            ToolNames.TableGet,
+            "Get deeper metadata for one Excel table.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "tableName" }
+            })),
+        new(
             ToolNames.TableRead,
             "Read one Excel table with headers and rows.",
             ToJsonElement(new
@@ -216,6 +229,94 @@ public sealed class McpToolServer
                 {
                     workbookPath = new { type = "string" },
                     tableName = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "tableName" }
+            })),
+        new(
+            ToolNames.TableCreate,
+            "Create one Excel table from an existing rectangular range.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" },
+                    sheetName = new { type = "string" },
+                    address = new { type = "string" },
+                    hasHeaders = new { type = "boolean" }
+                },
+                required = new[] { "workbookPath", "tableName", "sheetName", "address" }
+            })),
+        new(
+            ToolNames.TableResize,
+            "Resize one existing Excel table to a new rectangular range.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" },
+                    sheetName = new { type = "string" },
+                    address = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "tableName", "sheetName", "address" }
+            })),
+        new(
+            ToolNames.TableAppendRows,
+            "Append one or more rectangular data rows to an Excel table.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" },
+                    values = new
+                    {
+                        type = "array",
+                        items = new
+                        {
+                            type = "array"
+                        }
+                    }
+                },
+                required = new[] { "workbookPath", "tableName", "values" }
+            })),
+        new(
+            ToolNames.TableReplaceRows,
+            "Replace the data body rows for an Excel table.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" },
+                    values = new
+                    {
+                        type = "array",
+                        items = new
+                        {
+                            type = "array"
+                        }
+                    }
+                },
+                required = new[] { "workbookPath", "tableName", "values" }
+            })),
+        new(
+            ToolNames.TableSetOptions,
+            "Update supported table options such as headers and totals visibility.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    tableName = new { type = "string" },
+                    hasHeaders = new { type = "boolean" },
+                    showTotals = new { type = "boolean" }
                 },
                 required = new[] { "workbookPath", "tableName" }
             })),
@@ -312,7 +413,13 @@ public sealed class McpToolServer
                 ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
                 ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
                 ToolNames.QuerySetFormula => await HandleSetQueryFormulaAsync(arguments, cancellationToken),
+                ToolNames.TableGet => await HandleTableGetAsync(arguments, cancellationToken),
                 ToolNames.TableRead => await HandleTableReadAsync(arguments, cancellationToken),
+                ToolNames.TableCreate => await HandleTableCreateAsync(arguments, cancellationToken),
+                ToolNames.TableResize => await HandleTableResizeAsync(arguments, cancellationToken),
+                ToolNames.TableAppendRows => await HandleTableAppendRowsAsync(arguments, cancellationToken),
+                ToolNames.TableReplaceRows => await HandleTableReplaceRowsAsync(arguments, cancellationToken),
+                ToolNames.TableSetOptions => await HandleTableSetOptionsAsync(arguments, cancellationToken),
                 ToolNames.RangeRead => await HandleRangeReadAsync(arguments, cancellationToken),
                 ToolNames.RangeWrite => await HandleRangeWriteAsync(arguments, cancellationToken),
                 ToolNames.AttachedSessionGrantMutation => await HandleGrantApprovalAsync(arguments, cancellationToken),
@@ -486,6 +593,87 @@ public sealed class McpToolServer
             cancellationToken);
     }
 
+    private async Task<object> HandleTableGetAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var tableName = GetRequiredString(arguments, "tableName");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.GetTableAsync(workbookPath, tableName, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleTableCreateAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var request = new TableCreateRequest(
+            TableName: GetRequiredString(arguments, "tableName"),
+            SheetName: GetRequiredString(arguments, "sheetName"),
+            Address: GetRequiredString(arguments, "address"),
+            HasHeaders: GetOptionalBoolean(arguments, "hasHeaders") ?? true);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.CreateTableAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleTableResizeAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var request = new TableResizeRequest(
+            TableName: GetRequiredString(arguments, "tableName"),
+            SheetName: GetRequiredString(arguments, "sheetName"),
+            Address: GetRequiredString(arguments, "address"));
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.ResizeTableAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleTableAppendRowsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var request = new TableRowsWriteRequest(
+            TableName: GetRequiredString(arguments, "tableName"),
+            Values: GetRequiredMatrix(arguments, "values"));
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.AppendTableRowsAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleTableReplaceRowsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var request = new TableRowsWriteRequest(
+            TableName: GetRequiredString(arguments, "tableName"),
+            Values: GetRequiredMatrix(arguments, "values"));
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.ReplaceTableRowsAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleTableSetOptionsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var hasHeaders = GetOptionalBoolean(arguments, "hasHeaders");
+        var showTotals = GetOptionalBoolean(arguments, "showTotals");
+        if (hasHeaders is null && showTotals is null)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one of 'hasHeaders' or 'showTotals' is required.");
+        }
+
+        var request = new TableOptionsUpdateRequest(
+            TableName: GetRequiredString(arguments, "tableName"),
+            HasHeaders: hasHeaders,
+            ShowTotals: showTotals);
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.SetTableOptionsAsync(workbookPath, request, cancellationToken),
+            cancellationToken);
+    }
+
     private async Task<object> HandleRangeReadAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
@@ -656,6 +844,17 @@ public sealed class McpToolServer
         }
 
         return matrix;
+    }
+
+    private static object?[,] GetRequiredMatrix(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(propertyName, out var property))
+        {
+            return ParseMatrix(property);
+        }
+
+        throw new McpToolInputException("invalid_arguments", $"Missing required matrix argument '{propertyName}'.");
     }
 
     private static object? ParseCellValue(JsonElement element) =>

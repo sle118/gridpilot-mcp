@@ -14,7 +14,13 @@ public static class ToolNames
     public const string QueryRunProbe = "query_run_probe";
     public const string QueryCleanupTemp = "query_cleanup_temp";
     public const string QuerySetFormula = "query_set_formula";
+    public const string TableGet = "table_get";
     public const string TableRead = "table_read";
+    public const string TableCreate = "table_create";
+    public const string TableResize = "table_resize";
+    public const string TableAppendRows = "table_append_rows";
+    public const string TableReplaceRows = "table_replace_rows";
+    public const string TableSetOptions = "table_set_options";
     public const string RangeRead = "range_read";
     public const string RangeWrite = "range_write";
     public const string AttachedSessionGrantMutation = "attached_session_grant_mutation";
