@@ -3,16 +3,20 @@
 ## Immediate priorities
 
 1. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics now that attached mutation is lease-gated.
-2. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
-3. Decide whether the current rectangular range-write and query-edit surface should stay narrow or grow into a broader workbook patch workflow.
-4. Choose the next single higher-level workflow to promote behind the same attached-session approval gate, such as query authoring helpers or workbook patch operations.
-5. Package the next bounded work items into small backlog or delegation slices for future agents.
+2. Add the next mutating workbook families on top of the new read baseline: table lifecycle/mutation, worksheet lifecycle, and formula-aware operations.
+3. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
+4. Extend workbook names beyond read-only support if future workflows need explicit name creation, rename, or deletion.
+5. Package the remaining workbook-surface wave into small backlog or delegation slices for future agents.
 
 ## Suggested first bounded implementation slice
 
-- unsafe-state detection refinement plus one next higher-level workbook workflow on top of the new edit surface
+- unsafe-state detection refinement plus one next mutating workbook workflow on top of the new names/table-read surface
 - mock-first tests plus opt-in live validation for the above
 - keep broader workbook patching and formatting workflows out of scope in the same slice
+
+## Reference roadmap
+
+- workbook-surface expansion priorities are captured in `docs/topics/workbook-surface-roadmap.md`
 
 ## Cautions
 

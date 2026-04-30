@@ -25,6 +25,12 @@ public sealed class WorkbookService
         return await workbook.GetQueryAsync(queryName, cancellationToken);
     }
 
+    public async Task<NameSummary> GetNameAsync(string workbookPath, string name, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetNameAsync(name, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(string workbookPath, CancellationToken cancellationToken = default)
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
@@ -47,6 +53,12 @@ public sealed class WorkbookService
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
         return await workbook.ListConnectionsAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<NameSummary>> ListNamesAsync(string workbookPath, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.ListNamesAsync(cancellationToken);
     }
 
     public async Task<WorkbookInventory> ListInventoryAsync(string workbookPath, CancellationToken cancellationToken = default)
@@ -174,6 +186,28 @@ public sealed class WorkbookService
             range.SheetName,
             range.Address,
             ConvertValues(range.Values));
+    }
+
+    public async Task<RangeReadResult> ReadNamedRangeAsync(
+        string workbookPath,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        var range = await workbook.ReadNamedRangeAsync(name, cancellationToken);
+        return new RangeReadResult(
+            range.SheetName,
+            range.Address,
+            ConvertValues(range.Values));
+    }
+
+    public async Task<TableReadResult> ReadTableAsync(
+        string workbookPath,
+        string tableName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.ReadTableAsync(tableName, cancellationToken);
     }
 
     public async Task<RangeWriteResult> WriteRangesAsync(

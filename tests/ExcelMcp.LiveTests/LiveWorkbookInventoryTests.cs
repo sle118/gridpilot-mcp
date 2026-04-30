@@ -62,4 +62,20 @@ public sealed class LiveWorkbookInventoryTests
         Assert.Contains("let", errorQuery.Formula, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("let", filteredQuery.Formula, StringComparison.OrdinalIgnoreCase);
     }
+
+    [LiveExcelFact]
+    public async Task ReadTableAsync_ReturnsHeadersAndRowsForKnownLoadedTable()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+
+        var tableSummary = (await context.WorkbookService.ListTablesAsync(context.WorkbookPath))
+            .First(table => string.Equals(table.QueryName, "tbleWithErrorRemovedLoaded", StringComparison.OrdinalIgnoreCase));
+
+        var table = await context.WorkbookService.ReadTableAsync(context.WorkbookPath, tableSummary.TableName);
+
+        Assert.Equal(tableSummary.TableName, table.TableName);
+        Assert.Equal(tableSummary.SheetName, table.SheetName);
+        Assert.NotEmpty(table.Headers);
+        Assert.NotEmpty(table.Rows);
+    }
 }

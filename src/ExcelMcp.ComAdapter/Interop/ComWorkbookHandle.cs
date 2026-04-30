@@ -159,6 +159,26 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         return Task.FromResult<IReadOnlyList<ConnectionSummary>>(EnumerateConnectionSummaries().ToArray());
     }
 
+    public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var summaries = new List<NameSummary>();
+        foreach (var entry in EnumerateNames())
+        {
+            try
+            {
+                summaries.Add(BuildNameSummary(entry.NameObject));
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(entry.NameObject);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<NameSummary>>(summaries);
+    }
+
     private IEnumerable<ConnectionSummary> EnumerateConnectionSummaries()
     {
         var connections = GetCollection(_workbook, "Connections");
@@ -202,6 +222,23 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         finally
         {
             ComDispatch.ReleaseIfComObject(query);
+        }
+    }
+
+    public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var nameObject = FindNameByName(name)
+            ?? throw new InvalidOperationException($"Name '{name}' was not found.");
+
+        try
+        {
+            return Task.FromResult(BuildNameSummary(nameObject));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(nameObject);
         }
     }
     public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default)
@@ -395,6 +432,25 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             FailedNames: failedNames,
             Errors: errors));
     }
+
+    public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        try
+        {
+            table = FindTableByName(tableName)
+                ?? throw new InvalidOperationException($"Table '{tableName}' was not found.");
+
+            return Task.FromResult(BuildTableReadResult(table, tableName));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
     public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -416,6 +472,26 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         {
             ComDispatch.ReleaseIfComObject(range);
             ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? nameObject = null;
+        object? range = null;
+        try
+        {
+            nameObject = FindNameByName(name)
+                ?? throw new InvalidOperationException($"Name '{name}' was not found.");
+            range = ComDispatch.GetProperty<object>(nameObject, "RefersToRange");
+            return Task.FromResult(ReadRangeData(range, GetStringProperty(nameObject, "Name")));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(nameObject);
         }
     }
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
@@ -727,6 +803,37 @@ in
         return ComDispatch.GetProperty<object>(_workbook, "ActiveSheet");
     }
 
+    private IEnumerable<(string Name, object NameObject)> EnumerateNames()
+    {
+        var names = GetCollection(_workbook, "Names");
+        try
+        {
+            foreach (var nameObject in ComDispatch.Enumerate(names))
+            {
+                yield return (GetStringProperty(nameObject, "Name"), nameObject);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(names);
+        }
+    }
+
+    private object? FindNameByName(string name)
+    {
+        foreach (var candidate in EnumerateNames())
+        {
+            if (NameMatches(candidate.Name, name))
+            {
+                return candidate.NameObject;
+            }
+
+            ComDispatch.ReleaseIfComObject(candidate.NameObject);
+        }
+
+        return null;
+    }
+
     private object? FindWorksheetByName(string sheetName)
     {
         var worksheets = GetCollection(_workbook, "Worksheets");
@@ -829,6 +936,46 @@ in
         {
             ComDispatch.ReleaseIfComObject(sheets);
         }
+    }
+
+    private object? FindTableByName(string tableName)
+    {
+        var sheets = GetCollection(_workbook, "Sheets");
+        try
+        {
+            foreach (var sheet in ComDispatch.Enumerate(sheets))
+            {
+                object? listObjects = null;
+                try
+                {
+                    if (!ComDispatch.TryGetProperty(sheet, "ListObjects", out listObjects) || listObjects is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var table in ComDispatch.Enumerate(listObjects))
+                    {
+                        if (string.Equals(GetStringProperty(table, "Name"), tableName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return table;
+                        }
+
+                        ComDispatch.ReleaseIfComObject(table);
+                    }
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(listObjects);
+                    ComDispatch.ReleaseIfComObject(sheet);
+                }
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(sheets);
+        }
+
+        return null;
     }
 
     private IEnumerable<(string Name, object Query)> EnumerateQueries()
@@ -1019,4 +1166,134 @@ in
 
     private static NotSupportedException NotYetImplemented() =>
         new("This workbook operation is not implemented in the inventory slice.");
+
+    private static RangeData ReadRangeData(object range, string fallbackSheetName)
+    {
+        object? worksheet = null;
+        try
+        {
+            worksheet = ComDispatch.GetProperty<object>(range, "Worksheet");
+            var values = ComDispatch.GetProperty<object?>(range, "Value2");
+            return new RangeData(
+                SheetName: GetOptionalProperty(worksheet, "Name")?.ToString() ?? fallbackSheetName,
+                Address: GetOptionalProperty(range, "Address")?.ToString() ?? string.Empty,
+                Values: ConvertToMatrix(values));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private static NameSummary BuildNameSummary(object nameObject)
+    {
+        object? parent = null;
+        object? range = null;
+        try
+        {
+            parent = GetOptionalProperty(nameObject, "Parent");
+            range = GetOptionalProperty(nameObject, "RefersToRange");
+
+            var sheetName = parent is not null && IsWorksheetObject(parent)
+                ? GetStringProperty(parent, "Name")
+                : null;
+
+            return new NameSummary(
+                Name: GetStringProperty(nameObject, "Name"),
+                Scope: sheetName is null ? "Workbook" : "Worksheet",
+                SheetName: sheetName,
+                RefersTo: GetOptionalProperty(nameObject, "RefersTo")?.ToString() ?? string.Empty,
+                Address: range is null ? null : GetOptionalProperty(range, "Address")?.ToString());
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(parent);
+        }
+    }
+
+    private static TableReadResult BuildTableReadResult(object table, string fallbackName)
+    {
+        object? worksheet = null;
+        object? headerRange = null;
+        object? bodyRange = null;
+        object? tableRange = null;
+        try
+        {
+            worksheet = GetOptionalProperty(table, "Parent");
+            headerRange = GetOptionalProperty(table, "HeaderRowRange");
+            bodyRange = GetOptionalProperty(table, "DataBodyRange");
+            tableRange = GetOptionalProperty(table, "Range");
+
+            var headerValues = headerRange is null
+                ? Array.Empty<string>()
+                : FlattenHeaderValues(ComDispatch.GetProperty<object?>(headerRange, "Value2"));
+            var rows = bodyRange is null
+                ? Array.Empty<IReadOnlyList<object?>>()
+                : ConvertValues(ConvertToMatrix(ComDispatch.GetProperty<object?>(bodyRange, "Value2")));
+
+            return new TableReadResult(
+                TableName: GetStringProperty(table, "Name") is { Length: > 0 } actualName ? actualName : fallbackName,
+                SheetName: worksheet is null ? string.Empty : GetStringProperty(worksheet, "Name"),
+                Address: tableRange is null ? string.Empty : GetOptionalProperty(tableRange, "Address")?.ToString() ?? string.Empty,
+                Headers: headerValues,
+                Rows: rows,
+                HasTotalsRow: ToBoolean(GetOptionalProperty(table, "ShowTotals")));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(tableRange);
+            ComDispatch.ReleaseIfComObject(bodyRange);
+            ComDispatch.ReleaseIfComObject(headerRange);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private static IReadOnlyList<string> FlattenHeaderValues(object? value)
+    {
+        var matrix = ConvertToMatrix(value);
+        var headers = new List<string>();
+        for (var column = matrix.GetLowerBound(1); column <= matrix.GetUpperBound(1); column++)
+        {
+            headers.Add(matrix[matrix.GetLowerBound(0), column]?.ToString() ?? string.Empty);
+        }
+
+        return headers;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<object?>> ConvertValues(object?[,] values)
+    {
+        var rows = new List<IReadOnlyList<object?>>();
+        for (var row = values.GetLowerBound(0); row <= values.GetUpperBound(0); row++)
+        {
+            var columns = new List<object?>();
+            for (var column = values.GetLowerBound(1); column <= values.GetUpperBound(1); column++)
+            {
+                columns.Add(values[row, column]);
+            }
+
+            rows.Add(columns);
+        }
+
+        return rows;
+    }
+
+    private static bool IsWorksheetObject(object value)
+    {
+        var typeName = value.GetType().Name;
+        return typeName.Contains("Worksheet", StringComparison.OrdinalIgnoreCase) ||
+               typeName.Contains("_Worksheet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool NameMatches(string candidateName, string requestedName)
+    {
+        if (string.Equals(candidateName, requestedName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var bangIndex = candidateName.LastIndexOf('!');
+        return bangIndex >= 0 &&
+               string.Equals(candidateName[(bangIndex + 1)..], requestedName, StringComparison.OrdinalIgnoreCase);
+    }
 }

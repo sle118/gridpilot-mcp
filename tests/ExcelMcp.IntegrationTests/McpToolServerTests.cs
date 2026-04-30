@@ -34,11 +34,15 @@ public sealed class McpToolServerTests
             new[]
             {
                 ToolNames.WorkbookListInventory,
+                ToolNames.WorkbookListNames,
                 ToolNames.QueryGet,
+                ToolNames.NameGet,
+                ToolNames.NameRead,
                 ToolNames.QueryRefresh,
                 ToolNames.QueryRunProbe,
                 ToolNames.QueryCleanupTemp,
                 ToolNames.QuerySetFormula,
+                ToolNames.TableRead,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
                 ToolNames.AttachedSessionGrantMutation,
@@ -68,6 +72,23 @@ public sealed class McpToolServerTests
         Assert.Equal(1, sheets.GetArrayLength());
         Assert.True(result.StructuredContent.TryGetProperty("queries", out var queries));
         Assert.Equal("SalesQuery", queries[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ListNames_ReturnsStructuredNameContent()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            Names = [new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2")]
+        };
+
+        var server = CreateServer(fakeWorkbook);
+        var args = JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\book.xlsx" });
+
+        var result = await server.CallToolAsync(ToolNames.WorkbookListNames, args);
+
+        Assert.False(result.IsError);
+        Assert.Equal("SalesRange", result.StructuredContent[0].GetProperty("name").GetString());
     }
 
     [Fact]
@@ -170,6 +191,61 @@ public sealed class McpToolServerTests
         Assert.Equal("SalesQuery", result.StructuredContent.GetProperty("queryName").GetString());
         Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_NameGet_ReturnsStructuredSuccess()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.NameGet,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                name = "SalesRange"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("SalesRange", result.StructuredContent.GetProperty("name").GetString());
+        Assert.Equal("Workbook", result.StructuredContent.GetProperty("scope").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_NameRead_ReturnsStructuredValues()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.NameRead,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                name = "SalesRange"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Equal("value", result.StructuredContent.GetProperty("values")[0][0].GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableRead_ReturnsStructuredHeadersAndRows()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableRead,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("SalesTable", result.StructuredContent.GetProperty("tableName").GetString());
+        Assert.Equal("Column1", result.StructuredContent.GetProperty("headers")[0].GetString());
+        Assert.Equal(1d, result.StructuredContent.GetProperty("rows")[0][0].GetDouble());
     }
 
     [Fact]

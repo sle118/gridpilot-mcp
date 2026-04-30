@@ -55,6 +55,72 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task NameMethods_ReturnDataFromWorkbookHandle()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            Names =
+            [
+                new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2")
+            ],
+            OnGetNameAsync = _ => Task.FromResult(new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2"))
+        };
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var names = await sut.ListNamesAsync("C:/temp/book.xlsx");
+        var name = await sut.GetNameAsync("C:/temp/book.xlsx", "SalesRange");
+
+        Assert.Single(names);
+        Assert.Equal("SalesRange", names[0].Name);
+        Assert.Equal("SalesRange", name.Name);
+        Assert.Equal("$A$1:$B$2", name.Address);
+    }
+
+    [Fact]
+    public async Task ReadNamedRangeAsync_ReturnsConvertedValues()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnReadNamedRangeAsync = _ =>
+            Task.FromResult(new RangeData("Sheet1", "$C$1:$D$2", new object?[,] { { "left", "right" }, { 10d, 20d } }));
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.ReadNamedRangeAsync("C:/temp/book.xlsx", "SalesRange");
+
+        Assert.Equal("Sheet1", result.SheetName);
+        Assert.Equal("$C$1:$D$2", result.Address);
+        Assert.Equal("left", result.Values[0][0]);
+        Assert.Equal(20d, result.Values[1][1]);
+    }
+
+    [Fact]
+    public async Task ReadTableAsync_ReturnsHeadersAndRows()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnReadTableAsync = tableName =>
+            Task.FromResult(new TableReadResult(
+                tableName,
+                "Sheet1",
+                "$A$1:$B$3",
+                ["First", "Second"],
+                [[1d, 2d], [3d, 4d]],
+                false));
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.ReadTableAsync("C:/temp/book.xlsx", "SalesTable");
+
+        Assert.Equal("SalesTable", result.TableName);
+        Assert.Equal("Sheet1", result.SheetName);
+        Assert.Equal("First", result.Headers[0]);
+        Assert.Equal(4d, result.Rows[1][1]);
+    }
+
+    [Fact]
     public async Task ListInventoryAsync_AllowsReadOnlyAccessInAttachedSession()
     {
         var fakeWorkbook = new FakeWorkbookHandle
@@ -607,12 +673,16 @@ public sealed class WorkbookServiceTests
         public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TableSummary>>(Array.Empty<TableSummary>());
         public Task<IReadOnlyList<QuerySummary>> ListQueriesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<QuerySummary>>(Array.Empty<QuerySummary>());
         public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ConnectionSummary>>(Array.Empty<ConnectionSummary>());
+        public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<NameSummary>>(Array.Empty<NameSummary>());
         public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, string.Empty));
+        public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, "Workbook", null, string.Empty, null));
         public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default) => throw new InvalidOperationException("boom");
         public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
         public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
         public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => Task.FromResult(new CleanupResult(0, Array.Empty<string>()));
+        public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), Array.Empty<IReadOnlyList<object?>>(), false));
         public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
+        public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData("Sheet1", "$A$1", new object?[,] { { null } }));
         public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

@@ -1,3 +1,4 @@
+using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Results;
 
@@ -11,6 +12,7 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
     public IReadOnlyList<QuerySummary> Queries { get; set; } = Array.Empty<QuerySummary>();
     public IReadOnlyList<ConnectionSummary> Connections { get; set; } = Array.Empty<ConnectionSummary>();
+    public IReadOnlyList<NameSummary> Names { get; set; } = Array.Empty<NameSummary>();
     public List<(string QueryName, string Formula)> SetQueryFormulaCalls { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
@@ -27,7 +29,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Tables);
     public Task<IReadOnlyList<QuerySummary>> ListQueriesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Queries);
     public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Connections);
+    public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Names);
     public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, "let Source = 1 in Source"));
+    public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, "Workbook", null, "=Sheet1!$A$1", "$A$1"));
     public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default)
     {
         SetQueryFormulaCalls.Add((queryName, formula));
@@ -41,6 +45,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         ReadRangeCalls.Add((sheetName ?? "Sheet1", address));
         return Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, CreateMatrixForAddress(address)));
     }
+
+    public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new RangeData("Sheet1", "$A$1", new object?[,] { { "value" } }));
+
+    public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], [[1d, 2d]], false));
 
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
     {
