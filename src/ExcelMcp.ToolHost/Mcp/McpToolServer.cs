@@ -86,7 +86,8 @@ public sealed class McpToolServer
                 properties = new
                 {
                     workbookPath = new { type = "string" },
-                    name = new { type = "string" }
+                    name = new { type = "string" },
+                    sheetName = new { type = "string" }
                 },
                 required = new[] { "workbookPath", "name" }
             })),
@@ -99,7 +100,52 @@ public sealed class McpToolServer
                 properties = new
                 {
                     workbookPath = new { type = "string" },
-                    name = new { type = "string" }
+                    name = new { type = "string" },
+                    sheetName = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "name" }
+            })),
+        new(
+            ToolNames.NameCreate,
+            "Create a workbook or worksheet-scoped Excel name.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    name = new { type = "string" },
+                    refersTo = new { type = "string" },
+                    sheetName = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "name", "refersTo" }
+            })),
+        new(
+            ToolNames.NameUpdate,
+            "Update the target formula for a workbook or worksheet-scoped Excel name.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    name = new { type = "string" },
+                    refersTo = new { type = "string" },
+                    sheetName = new { type = "string" }
+                },
+                required = new[] { "workbookPath", "name", "refersTo" }
+            })),
+        new(
+            ToolNames.NameDelete,
+            "Delete a workbook or worksheet-scoped Excel name.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    name = new { type = "string" },
+                    sheetName = new { type = "string" }
                 },
                 required = new[] { "workbookPath", "name" }
             })),
@@ -259,6 +305,9 @@ public sealed class McpToolServer
                 ToolNames.QueryGet => await HandleGetQueryAsync(arguments, cancellationToken),
                 ToolNames.NameGet => await HandleGetNameAsync(arguments, cancellationToken),
                 ToolNames.NameRead => await HandleReadNameAsync(arguments, cancellationToken),
+                ToolNames.NameCreate => await HandleCreateNameAsync(arguments, cancellationToken),
+                ToolNames.NameUpdate => await HandleUpdateNameAsync(arguments, cancellationToken),
+                ToolNames.NameDelete => await HandleDeleteNameAsync(arguments, cancellationToken),
                 ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
                 ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
                 ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
@@ -327,9 +376,10 @@ public sealed class McpToolServer
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
         var name = GetRequiredString(arguments, "name");
+        var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
             workbookPath,
-            service => service.GetNameAsync(workbookPath, name, cancellationToken),
+            service => service.GetNameAsync(workbookPath, name, sheetName, cancellationToken),
             cancellationToken);
     }
 
@@ -337,9 +387,45 @@ public sealed class McpToolServer
     {
         var workbookPath = GetRequiredString(arguments, "workbookPath");
         var name = GetRequiredString(arguments, "name");
+        var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
             workbookPath,
-            service => service.ReadNamedRangeAsync(workbookPath, name, cancellationToken),
+            service => service.ReadNamedRangeAsync(workbookPath, name, sheetName, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleCreateNameAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var name = GetRequiredString(arguments, "name");
+        var refersTo = GetRequiredString(arguments, "refersTo");
+        var sheetName = GetOptionalString(arguments, "sheetName");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.CreateNameAsync(workbookPath, name, refersTo, sheetName, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleUpdateNameAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var name = GetRequiredString(arguments, "name");
+        var refersTo = GetRequiredString(arguments, "refersTo");
+        var sheetName = GetOptionalString(arguments, "sheetName");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.UpdateNameAsync(workbookPath, name, refersTo, sheetName, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<object> HandleDeleteNameAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var name = GetRequiredString(arguments, "name");
+        var sheetName = GetOptionalString(arguments, "sheetName");
+        return await _workbookServices.ExecuteAsync(
+            workbookPath,
+            service => service.DeleteNameAsync(workbookPath, name, sheetName, cancellationToken),
             cancellationToken);
     }
 

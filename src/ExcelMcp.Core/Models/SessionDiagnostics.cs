@@ -5,4 +5,7 @@ public sealed record SessionDiagnostics(
     bool IsReady,
     bool IsInteractive,
     ExcelCalculationState CalculationState,
-    SessionAttachTargetMode? AttachTargetMode = null);
+    SessionAttachTargetMode? AttachTargetMode = null,
+    bool IsEditingCell = false,
+    bool HasModalUi = false,
+    bool IsBusy = false);

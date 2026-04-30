@@ -38,6 +38,9 @@ public sealed class McpToolServerTests
                 ToolNames.QueryGet,
                 ToolNames.NameGet,
                 ToolNames.NameRead,
+                ToolNames.NameCreate,
+                ToolNames.NameUpdate,
+                ToolNames.NameDelete,
                 ToolNames.QueryRefresh,
                 ToolNames.QueryRunProbe,
                 ToolNames.QueryCleanupTemp,
@@ -227,6 +230,70 @@ public sealed class McpToolServerTests
         Assert.False(result.IsError);
         Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
         Assert.Equal("value", result.StructuredContent.GetProperty("values")[0][0].GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_NameCreate_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.NameCreate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                name = "SalesRange",
+                refersTo = "=Sheet1!$A$1:$B$2"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("create", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Single(fakeWorkbook.CreatedNames);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_NameUpdate_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.NameUpdate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                name = "LocalRange",
+                refersTo = "=Sheet1!$C$1",
+                sheetName = "Sheet1"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("Worksheet", result.StructuredContent.GetProperty("scope").GetString());
+        Assert.Single(fakeWorkbook.UpdatedNames);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_NameDelete_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.NameDelete,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                name = "SalesRange"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Single(fakeWorkbook.DeletedNames);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
     }
 
     [Fact]

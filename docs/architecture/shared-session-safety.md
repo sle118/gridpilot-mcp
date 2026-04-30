@@ -28,11 +28,14 @@ The current policy is deliberately conservative:
 Read-only operations currently include:
 
 - workbook inventory
+- workbook-name inventory and named-range reads
 - query definition reads
+- table reads
 - range reads
 
 Mutating or diagnostic-write operations currently include:
 
+- name create, update, and delete
 - targeted refresh
 - query probing
 - temp-query cleanup
@@ -46,7 +49,7 @@ Future workbook write/edit operations should use the same safety seam.
 The bridge enforces safety before opening the workbook for a mutating action:
 
 1. classify the operation intent
-2. inspect session diagnostics such as session mode, readiness, interactivity, and calculation state
+2. inspect session diagnostics such as session mode, readiness, interactivity, calculation state, and current unsafe attached-session heuristics
 3. require workbook-owner attachment for attached-session mutation
 4. require a valid approval lease for the exact workbook path when attached-session mutation is requested
 5. return a structured refusal reason when the action should be blocked
@@ -90,11 +93,10 @@ This avoids hidden differences between tool callers and keeps workbook-close beh
 
 ## Known limits
 
-- the current unsafe-state detection is still heuristic and relies on Excel readiness, interactivity, and calculation state rather than richer UI inspection
+- the current unsafe-state detection is still heuristic and relies on readiness, interactivity, calculation state, and derived edit/modal signals rather than deep UI inspection
 - it does not yet provide a lease/lock model for coordinated shared mutation
 - attached mutation approval is a trust/coordination mechanism, not an authentication system
-- the first approved attached mutation surface is still narrow and limited to refresh, probe, and temp-query cleanup
-- the approved attached mutation surface is still narrow and limited to refresh, probe, temp-query cleanup, query formula edits, and rectangular range writes
+- the approved attached mutation surface is still narrow and limited to refresh, probe, temp-query cleanup, query formula edits, name lifecycle, and rectangular range writes
 - attached-session live validation is supported, but gated separately because workstation setup still determines whether the intended running workbook owner can be prepared cleanly for attachment
 
 ## Next design pressure

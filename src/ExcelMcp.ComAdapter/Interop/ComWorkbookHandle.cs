@@ -225,16 +225,85 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
-    public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default)
+    public Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var nameObject = FindNameByName(name)
+        var nameObject = FindNameByName(name, sheetName)
             ?? throw new InvalidOperationException($"Name '{name}' was not found.");
 
         try
         {
             return Task.FromResult(BuildNameSummary(nameObject));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(nameObject);
+        }
+    }
+
+    public Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (FindNameByName(name, sheetName) is { } existing)
+        {
+            ComDispatch.ReleaseIfComObject(existing);
+            throw new InvalidOperationException($"Name '{BuildDisplayName(name, sheetName)}' already exists.");
+        }
+
+        object? target = null;
+        object? names = null;
+        object? created = null;
+        try
+        {
+            target = string.IsNullOrWhiteSpace(sheetName) ? _workbook : GetWorksheet(sheetName);
+            names = GetCollection(target, "Names");
+            created = ComDispatch.InvokeMethod(names, "Add", name, refersTo)
+                ?? throw new InvalidOperationException($"Excel did not create name '{BuildDisplayName(name, sheetName)}'.");
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(created);
+            ComDispatch.ReleaseIfComObject(names);
+            if (!ReferenceEquals(target, _workbook))
+            {
+                ComDispatch.ReleaseIfComObject(target);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var nameObject = FindNameByName(name, sheetName)
+            ?? throw new InvalidOperationException($"Name '{BuildDisplayName(name, sheetName)}' was not found.");
+
+        try
+        {
+            ComDispatch.SetProperty(nameObject, "RefersTo", refersTo);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(nameObject);
+        }
+    }
+
+    public Task DeleteNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var nameObject = FindNameByName(name, sheetName)
+            ?? throw new InvalidOperationException($"Name '{BuildDisplayName(name, sheetName)}' was not found.");
+
+        try
+        {
+            ComDispatch.InvokeMethod(nameObject, "Delete");
+            return Task.CompletedTask;
         }
         finally
         {
@@ -475,7 +544,7 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
-    public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default)
+    public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -483,7 +552,7 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         object? range = null;
         try
         {
-            nameObject = FindNameByName(name)
+            nameObject = FindNameByName(name, sheetName)
                 ?? throw new InvalidOperationException($"Name '{name}' was not found.");
             range = ComDispatch.GetProperty<object>(nameObject, "RefersToRange");
             return Task.FromResult(ReadRangeData(range, GetStringProperty(nameObject, "Name")));
@@ -819,11 +888,11 @@ in
         }
     }
 
-    private object? FindNameByName(string name)
+    private object? FindNameByName(string name, string? sheetName = null)
     {
         foreach (var candidate in EnumerateNames())
         {
-            if (NameMatches(candidate.Name, name))
+            if (NameMatches(candidate.Name, name, sheetName, candidate.NameObject))
             {
                 return candidate.NameObject;
             }
@@ -1285,15 +1354,32 @@ in
                typeName.Contains("_Worksheet", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool NameMatches(string candidateName, string requestedName)
+    private static bool NameMatches(string candidateName, string requestedName, string? requestedSheetName, object nameObject)
     {
-        if (string.Equals(candidateName, requestedName, StringComparison.OrdinalIgnoreCase))
+        var summary = BuildNameSummary(nameObject);
+        var localName = GetLocalName(candidateName);
+
+        if (!string.Equals(localName, requestedName, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(candidateName, requestedName, StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return false;
         }
 
-        var bangIndex = candidateName.LastIndexOf('!');
-        return bangIndex >= 0 &&
-               string.Equals(candidateName[(bangIndex + 1)..], requestedName, StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(requestedSheetName))
+        {
+            return string.Equals(summary.Scope, "Workbook", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(summary.Scope, "Worksheet", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(summary.SheetName, requestedSheetName, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string GetLocalName(string candidateName)
+    {
+        var bangIndex = candidateName.LastIndexOf('!');
+        return bangIndex >= 0 ? candidateName[(bangIndex + 1)..] : candidateName;
+    }
+
+    private static string BuildDisplayName(string name, string? sheetName) =>
+        string.IsNullOrWhiteSpace(sheetName) ? name : $"{sheetName}!{name}";
 }

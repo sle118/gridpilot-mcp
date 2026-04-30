@@ -39,6 +39,24 @@ public sealed class WorkbookOperationSafety
             }
         }
 
+        if (diagnostics.IsEditingCell)
+        {
+            return new OperationError(
+                Code: "shared_session_ui_unsafe",
+                Message: $"Operation '{GetOperationLabel(intent)}' is blocked because Excel appears to be in active cell edit mode.",
+                Detail: "Excel reported a non-ready but still interactive state, which is treated as in-progress cell editing for attached-session safety.",
+                Source: nameof(WorkbookOperationSafety));
+        }
+
+        if (diagnostics.HasModalUi)
+        {
+            return new OperationError(
+                Code: "shared_session_ui_unsafe",
+                Message: $"Operation '{GetOperationLabel(intent)}' is blocked because Excel appears to have modal UI open.",
+                Detail: "Excel reported a non-interactive state, which is treated as modal or automation-blocking UI.",
+                Source: nameof(WorkbookOperationSafety));
+        }
+
         if (!diagnostics.IsReady)
         {
             return new OperationError(
@@ -48,16 +66,7 @@ public sealed class WorkbookOperationSafety
                 Source: nameof(WorkbookOperationSafety));
         }
 
-        if (!diagnostics.IsInteractive)
-        {
-            return new OperationError(
-                Code: "shared_session_ui_unsafe",
-                Message: $"Operation '{GetOperationLabel(intent)}' is blocked because Excel is not interactive.",
-                Detail: "Excel reported a non-interactive state, which can indicate modal UI or another automation-blocking condition.",
-                Source: nameof(WorkbookOperationSafety));
-        }
-
-        if (diagnostics.CalculationState is ExcelCalculationState.Calculating or ExcelCalculationState.Pending)
+        if (diagnostics.IsBusy || diagnostics.CalculationState is ExcelCalculationState.Calculating or ExcelCalculationState.Pending)
         {
             return new OperationError(
                 Code: "shared_session_busy",

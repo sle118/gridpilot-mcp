@@ -13,6 +13,7 @@ The bridge currently supports:
 - workbook inventory for sheets, tables, connections, and queries
 - workbook and worksheet-scoped name inventory
 - named-range reads
+- workbook and worksheet-scoped name create/update/delete
 - query definition read and query formula edit
 - table-aware reads with headers and row payloads
 - targeted query refresh

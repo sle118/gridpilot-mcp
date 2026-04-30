@@ -2,15 +2,15 @@
 
 ## Immediate priorities
 
-1. Improve unsafe UI-state detection beyond the current readiness/interactivity/calculation heuristics now that attached mutation is lease-gated.
-2. Add the next mutating workbook families on top of the new read baseline: table lifecycle/mutation, worksheet lifecycle, and formula-aware operations.
+1. Add the next mutating workbook families on top of the new names baseline: table lifecycle/mutation, worksheet lifecycle, and formula-aware operations.
+2. Improve unsafe UI-state detection beyond the current readiness/interactivity-plus-edit/modal heuristics if broader shared-session mutation proves risky.
 3. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
-4. Extend workbook names beyond read-only support if future workflows need explicit name creation, rename, or deletion.
-5. Package the remaining workbook-surface wave into small backlog or delegation slices for future agents.
+4. Package the remaining workbook-surface wave into small backlog or delegation slices for future agents.
+5. Extend the live workbook fixture only where the next mutating families need stable validation anchors.
 
 ## Suggested first bounded implementation slice
 
-- unsafe-state detection refinement plus one next mutating workbook workflow on top of the new names/table-read surface
+- one next mutating workbook workflow on top of the new names/table-read surface, ideally table lifecycle or worksheet lifecycle
 - mock-first tests plus opt-in live validation for the above
 - keep broader workbook patching and formatting workflows out of scope in the same slice
 

@@ -19,12 +19,24 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public IReadOnlyList<QuerySummary> Queries { get; set; } = Array.Empty<QuerySummary>();
     public IReadOnlyList<ConnectionSummary> Connections { get; set; } = Array.Empty<ConnectionSummary>();
     public IReadOnlyList<NameSummary> Names { get; set; } = Array.Empty<NameSummary>();
+    public List<(string Name, string RefersTo, string? SheetName)> CreatedNames { get; } = [];
+    public List<(string Name, string RefersTo, string? SheetName)> UpdatedNames { get; } = [];
+    public List<(string Name, string? SheetName)> DeletedNames { get; } = [];
 
     public Func<string, Task<QueryDefinition>> OnGetQueryAsync { get; set; } =
         name => Task.FromResult(new QueryDefinition(name, "let Source = 1 in Source"));
 
-    public Func<string, Task<NameSummary>> OnGetNameAsync { get; set; } =
-        name => Task.FromResult(new NameSummary(name, "Workbook", null, "=Sheet1!$A$1", "$A$1"));
+    public Func<string, string?, Task<NameSummary>> OnGetNameAsync { get; set; } =
+        (name, sheetName) => Task.FromResult(new NameSummary(name, sheetName is null ? "Workbook" : "Worksheet", sheetName, "=Sheet1!$A$1", "$A$1"));
+
+    public Func<string, string, string?, Task> OnCreateNameAsync { get; set; } =
+        (name, refersTo, sheetName) => Task.CompletedTask;
+
+    public Func<string, string, string?, Task> OnUpdateNameAsync { get; set; } =
+        (name, refersTo, sheetName) => Task.CompletedTask;
+
+    public Func<string, string?, Task> OnDeleteNameAsync { get; set; } =
+        (name, sheetName) => Task.CompletedTask;
 
     public Func<QueryProbeRequest, Task<ProbeResult>> OnRunProbeAsync { get; set; } =
         request => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
@@ -38,8 +50,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Func<string, string?, Task<RangeData>> OnReadRangeAsync { get; set; } =
         (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "value" } }));
 
-    public Func<string, Task<RangeData>> OnReadNamedRangeAsync { get; set; } =
-        name => Task.FromResult(new RangeData("Sheet1", "$A$1", new object?[,] { { "value" } }));
+    public Func<string, string?, Task<RangeData>> OnReadNamedRangeAsync { get; set; } =
+        (name, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { "value" } }));
 
     public Func<string, Task<TableReadResult>> OnReadTableAsync { get; set; } =
         tableName => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1:$B$2", ["Column1", "Column2"], [[1d, 2d]], false));
@@ -60,7 +72,24 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Connections);
     public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Names);
     public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => OnGetQueryAsync(queryName);
-    public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default) => OnGetNameAsync(name);
+    public Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => OnGetNameAsync(name, sheetName);
+    public Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        CreatedNames.Add((name, refersTo, sheetName));
+        return OnCreateNameAsync(name, refersTo, sheetName);
+    }
+
+    public Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        UpdatedNames.Add((name, refersTo, sheetName));
+        return OnUpdateNameAsync(name, refersTo, sheetName);
+    }
+
+    public Task DeleteNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        DeletedNames.Add((name, sheetName));
+        return OnDeleteNameAsync(name, sheetName);
+    }
     public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default)
     {
         SetQueryFormulaCalls.Add((queryName, formula));
@@ -79,8 +108,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return OnReadRangeAsync(address, sheetName);
     }
 
-    public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default) =>
-        OnReadNamedRangeAsync(name);
+    public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) =>
+        OnReadNamedRangeAsync(name, sheetName);
 
     public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) =>
         OnReadTableAsync(tableName);

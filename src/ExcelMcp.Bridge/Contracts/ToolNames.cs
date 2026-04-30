@@ -7,6 +7,9 @@ public static class ToolNames
     public const string QueryGet = "query_get";
     public const string NameGet = "name_get";
     public const string NameRead = "name_read";
+    public const string NameCreate = "name_create";
+    public const string NameUpdate = "name_update";
+    public const string NameDelete = "name_delete";
     public const string QueryRefresh = "query_refresh";
     public const string QueryRunProbe = "query_run_probe";
     public const string QueryCleanupTemp = "query_cleanup_temp";

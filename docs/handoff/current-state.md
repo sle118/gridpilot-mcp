@@ -19,10 +19,10 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - temp-query cleanup with structured partial-failure reporting
 - query formula edit with structured success/failure results and bridge-owned save behavior
 - range read and multi-range write with bridge-side preflight validation and bridge-owned save behavior for successful writes
-- workbook and worksheet-scoped name inventory plus named-range reads
+- workbook and worksheet-scoped name inventory, named-range reads, and explicit name create/update/delete operations
 - table-aware reads with headers, rows, and totals-row metadata
-- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, and workbook-scoped approval leases for attached refresh, probe, temp-query cleanup, query formula edit, and range write
-- a widened but still structured MCP stdio host surface for inventory, workbook-name listing, name resolution/read, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, table read, range read, range write, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
+- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, richer unsafe-state classification, and workbook-scoped approval leases for attached refresh, probe, temp-query cleanup, query formula edit, range write, and name mutation
+- a widened but still structured MCP stdio host surface for inventory, workbook-name listing, name resolution/read/create/update/delete, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, table read, range read, range write, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
 - an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, probing, and lease-gated attached-session mutation
 - a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory and range reads, pre-approval refusal for workbook edits, approved mutation, revoke, and approval expiry against a real running Excel instance
 - branding assets now folded into `branding/assets/`
@@ -47,7 +47,7 @@ The intended architecture remains:
 ## Immediate gaps
 
 - no broad concurrency/coordination support yet for safe agent work while a human is actively editing the same workbook
-- no broad attached-session workbook edit surface yet beyond query edits, named-range reads, table reads, range read/write, refresh, probe, and temp-query cleanup
-- no richer unsafe-UI detection yet beyond readiness/interactivity/calculation heuristics
+- no broad attached-session workbook edit surface yet beyond query edits, name lifecycle, named-range reads, table reads, range read/write, refresh, probe, and temp-query cleanup
+- no broad unsafe-UI detection yet beyond the current readiness/interactivity-plus-edit/modal heuristics
 - no broad workbook patching, formatting, table-shape editing, or worksheet lifecycle surface yet
 - no first backlog/delegation packet set yet

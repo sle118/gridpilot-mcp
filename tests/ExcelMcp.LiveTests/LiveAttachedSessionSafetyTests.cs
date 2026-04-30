@@ -204,4 +204,30 @@ public sealed class LiveAttachedSessionSafetyTests
         Assert.Equal(30d, Convert.ToDouble(secondRow.Values[1, 1]));
         Assert.Equal(40d, Convert.ToDouble(secondRow.Values[1, 2]));
     }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_NameCreate_FailsBeforeApproval_AndSucceedsAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var blocked = await context.WorkbookService.CreateNameAsync(
+            context.WorkbookPath,
+            "GridPilotAttachedName",
+            "=tbleWithErrorRemovedLoaded!$Z$5:$AA$5");
+
+        Assert.False(blocked.Succeeded);
+        Assert.Equal("shared_session_approval_required", blocked.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var created = await context.WorkbookService.CreateNameAsync(
+            context.WorkbookPath,
+            "GridPilotAttachedName",
+            "=tbleWithErrorRemovedLoaded!$Z$5:$AA$5");
+
+        Assert.True(created.Succeeded);
+
+        var name = await context.WorkbookService.GetNameAsync(context.WorkbookPath, "GridPilotAttachedName");
+        Assert.Equal("GridPilotAttachedName", name.Name);
+    }
 }

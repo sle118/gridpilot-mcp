@@ -59,12 +59,22 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
     {
         ThrowIfDisposed();
 
+        var isReady = ReadBooleanProperty("Ready", defaultValue: true);
+        var isInteractive = ReadBooleanProperty("Interactive", defaultValue: true);
+        var calculationState = ReadCalculationState();
+        var isEditingCell = !isReady && isInteractive;
+        var hasModalUi = !isInteractive;
+        var isBusy = calculationState is ExcelCalculationState.Calculating or ExcelCalculationState.Pending;
+
         return new SessionDiagnostics(
             SessionMode: _ownsApplication ? ExcelSessionMode.CreateNew : ExcelSessionMode.AttachToRunning,
-            IsReady: ReadBooleanProperty("Ready", defaultValue: true),
-            IsInteractive: ReadBooleanProperty("Interactive", defaultValue: true),
-            CalculationState: ReadCalculationState(),
-            AttachTargetMode: _attachTargetMode);
+            IsReady: isReady,
+            IsInteractive: isInteractive,
+            CalculationState: calculationState,
+            AttachTargetMode: _attachTargetMode,
+            IsEditingCell: isEditingCell,
+            HasModalUi: hasModalUi,
+            IsBusy: isBusy);
     }
 
     public void ApplyOptions(SessionOptions options)

@@ -63,7 +63,7 @@ public sealed class WorkbookServiceTests
             [
                 new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2")
             ],
-            OnGetNameAsync = _ => Task.FromResult(new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2"))
+            OnGetNameAsync = (_, _) => Task.FromResult(new NameSummary("SalesRange", "Workbook", null, "=Sheet1!$A$1:$B$2", "$A$1:$B$2"))
         };
 
         var session = new FakeExcelSession { Workbook = fakeWorkbook };
@@ -82,7 +82,7 @@ public sealed class WorkbookServiceTests
     public async Task ReadNamedRangeAsync_ReturnsConvertedValues()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
-        fakeWorkbook.OnReadNamedRangeAsync = _ =>
+        fakeWorkbook.OnReadNamedRangeAsync = (_, _) =>
             Task.FromResult(new RangeData("Sheet1", "$C$1:$D$2", new object?[,] { { "left", "right" }, { 10d, 20d } }));
 
         var session = new FakeExcelSession { Workbook = fakeWorkbook };
@@ -118,6 +118,77 @@ public sealed class WorkbookServiceTests
         Assert.Equal("Sheet1", result.SheetName);
         Assert.Equal("First", result.Headers[0]);
         Assert.Equal(4d, result.Rows[1][1]);
+    }
+
+    [Fact]
+    public async Task CreateNameAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CreateNameAsync("C:/temp/book.xlsx", "SalesRange", "=Sheet1!$A$1:$B$2");
+
+        Assert.True(result.Succeeded);
+        var created = Assert.Single(fakeWorkbook.CreatedNames);
+        Assert.Equal("SalesRange", created.Name);
+        Assert.Equal("=Sheet1!$A$1:$B$2", created.RefersTo);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateNameAsync_AllowsWorksheetScopedNameMutationWithApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var registry = new InMemoryAttachedMutationApprovalRegistry();
+        registry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, registry));
+
+        var result = await sut.UpdateNameAsync(@"C:\temp\book.xlsx", "LocalRange", "=Sheet1!$C$1:$C$2", "Sheet1");
+
+        Assert.True(result.Succeeded);
+        var updated = Assert.Single(fakeWorkbook.UpdatedNames);
+        Assert.Equal("LocalRange", updated.Name);
+        Assert.Equal("Sheet1", updated.SheetName);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteNameAsync_RequiresApprovalForAttachedMutation()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.DeleteNameAsync(@"C:\temp\book.xlsx", "SalesRange");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.DeletedNames);
+    }
+
+    [Fact]
+    public async Task UpdateNameAsync_DoesNotSaveOnFailure()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnUpdateNameAsync = (_, _, _) => throw new InvalidOperationException("boom");
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.UpdateNameAsync(@"C:\temp\book.xlsx", "SalesRange", "=Sheet1!$A$1");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("name_update_failed", result.Error?.Code);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
     }
 
     [Fact]
@@ -256,6 +327,42 @@ public sealed class WorkbookServiceTests
         Assert.False(result.Succeeded);
         Assert.Equal("shared_session_ui_unsafe", result.Error?.Code);
         Assert.Empty(fakeWorkbook.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_BlocksWhenExcelAppearsToBeInCellEditMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.CreateNew, false, true, ExcelCalculationState.Done, null, IsEditingCell: true)
+        };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_ui_unsafe", result.Error?.Code);
+        Assert.Contains("active cell edit mode", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshQueryAsync_BlocksWhenExcelAppearsToHaveModalUi()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.CreateNew, true, false, ExcelCalculationState.Done, null, HasModalUi: true)
+        };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RefreshQueryAsync(@"C:\temp\book.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_ui_unsafe", result.Error?.Code);
+        Assert.Contains("modal ui", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -675,14 +782,17 @@ public sealed class WorkbookServiceTests
         public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ConnectionSummary>>(Array.Empty<ConnectionSummary>());
         public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<NameSummary>>(Array.Empty<NameSummary>());
         public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, string.Empty));
-        public Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, "Workbook", null, string.Empty, null));
+        public Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, sheetName is null ? "Workbook" : "Worksheet", sheetName, string.Empty, null));
+        public Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default) => throw new InvalidOperationException("boom");
         public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
         public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
         public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => Task.FromResult(new CleanupResult(0, Array.Empty<string>()));
         public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), Array.Empty<IReadOnlyList<object?>>(), false));
         public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
-        public Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData("Sheet1", "$A$1", new object?[,] { { null } }));
+        public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { null } }));
         public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

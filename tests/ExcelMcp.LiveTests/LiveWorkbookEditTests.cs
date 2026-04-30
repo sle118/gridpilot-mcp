@@ -62,4 +62,40 @@ public sealed class LiveWorkbookEditTests
         Assert.Equal(10d, Convert.ToDouble(secondRow.Values[1, 1]));
         Assert.Equal(20d, Convert.ToDouble(secondRow.Values[1, 2]));
     }
+
+    [LiveExcelFact]
+    public async Task NameLifecycle_PersistsCreateUpdateAndDelete()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+
+        var created = await context.WorkbookService.CreateNameAsync(
+            context.WorkbookPath,
+            "GridPilotTempName",
+            "=tbleWithErrorRemovedLoaded!$Z$1:$AA$1");
+
+        Assert.True(created.Succeeded);
+
+        var name = await context.WorkbookService.GetNameAsync(context.WorkbookPath, "GridPilotTempName");
+        Assert.Equal("Workbook", name.Scope);
+        Assert.Equal("=tbleWithErrorRemovedLoaded!$Z$1:$AA$1", name.RefersTo);
+
+        var updated = await context.WorkbookService.UpdateNameAsync(
+            context.WorkbookPath,
+            "GridPilotTempName",
+            "=tbleWithErrorRemovedLoaded!$Z$2:$AA$2");
+
+        Assert.True(updated.Succeeded);
+
+        var reread = await context.WorkbookService.GetNameAsync(context.WorkbookPath, "GridPilotTempName");
+        Assert.Equal("=tbleWithErrorRemovedLoaded!$Z$2:$AA$2", reread.RefersTo);
+
+        var deleted = await context.WorkbookService.DeleteNameAsync(
+            context.WorkbookPath,
+            "GridPilotTempName");
+
+        Assert.True(deleted.Succeeded);
+
+        var names = await context.WorkbookService.ListNamesAsync(context.WorkbookPath);
+        Assert.DoesNotContain(names, entry => string.Equals(entry.Name, "GridPilotTempName", StringComparison.OrdinalIgnoreCase));
+    }
 }

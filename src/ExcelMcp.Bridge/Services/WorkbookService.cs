@@ -25,10 +25,87 @@ public sealed class WorkbookService
         return await workbook.GetQueryAsync(queryName, cancellationToken);
     }
 
-    public async Task<NameSummary> GetNameAsync(string workbookPath, string name, CancellationToken cancellationToken = default)
+    public async Task<NameSummary> GetNameAsync(string workbookPath, string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
-        return await workbook.GetNameAsync(name, cancellationToken);
+        return await workbook.GetNameAsync(name, sheetName, cancellationToken);
+    }
+
+    public async Task<NameMutationResult> CreateNameAsync(
+        string workbookPath,
+        string name,
+        string refersTo,
+        string? sheetName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new NameMutationResult(false, workbookPath, name, "create", GetScope(sheetName), sheetName, refersTo, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.CreateNameAsync(name, refersTo, sheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new NameMutationResult(true, workbookPath, name, "create", GetScope(sheetName), sheetName, refersTo);
+        }
+        catch (Exception ex)
+        {
+            return BuildNameMutationError(workbookPath, name, "create", sheetName, refersTo, ex);
+        }
+    }
+
+    public async Task<NameMutationResult> UpdateNameAsync(
+        string workbookPath,
+        string name,
+        string refersTo,
+        string? sheetName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new NameMutationResult(false, workbookPath, name, "update", GetScope(sheetName), sheetName, refersTo, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.UpdateNameAsync(name, refersTo, sheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new NameMutationResult(true, workbookPath, name, "update", GetScope(sheetName), sheetName, refersTo);
+        }
+        catch (Exception ex)
+        {
+            return BuildNameMutationError(workbookPath, name, "update", sheetName, refersTo, ex);
+        }
+    }
+
+    public async Task<NameMutationResult> DeleteNameAsync(
+        string workbookPath,
+        string name,
+        string? sheetName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new NameMutationResult(false, workbookPath, name, "delete", GetScope(sheetName), sheetName, null, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.DeleteNameAsync(name, sheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            return new NameMutationResult(true, workbookPath, name, "delete", GetScope(sheetName), sheetName);
+        }
+        catch (Exception ex)
+        {
+            return BuildNameMutationError(workbookPath, name, "delete", sheetName, null, ex);
+        }
     }
 
     public async Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(string workbookPath, CancellationToken cancellationToken = default)
@@ -191,10 +268,11 @@ public sealed class WorkbookService
     public async Task<RangeReadResult> ReadNamedRangeAsync(
         string workbookPath,
         string name,
+        string? sheetName = null,
         CancellationToken cancellationToken = default)
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
-        var range = await workbook.ReadNamedRangeAsync(name, cancellationToken);
+        var range = await workbook.ReadNamedRangeAsync(name, sheetName, cancellationToken);
         return new RangeReadResult(
             range.SheetName,
             range.Address,
@@ -305,4 +383,28 @@ public sealed class WorkbookService
 
         return rows;
     }
+
+    private static string GetScope(string? sheetName) =>
+        string.IsNullOrWhiteSpace(sheetName) ? "Workbook" : "Worksheet";
+
+    private static NameMutationResult BuildNameMutationError(
+        string workbookPath,
+        string name,
+        string action,
+        string? sheetName,
+        string? refersTo,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            name,
+            action,
+            GetScope(sheetName),
+            sheetName,
+            refersTo,
+            new OperationError(
+                Code: $"name_{action}_failed",
+                Message: $"Failed to {action} name '{name}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
 }

@@ -17,7 +17,10 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default);
 
     Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default);
-    Task<NameSummary> GetNameAsync(string name, CancellationToken cancellationToken = default);
+    Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task DeleteNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
     Task SetQueryFormulaAsync(string queryName, string formula, CancellationToken cancellationToken = default);
     Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default);
     Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default);
@@ -25,6 +28,6 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default);
 
     Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
-    Task<RangeData> ReadNamedRangeAsync(string name, CancellationToken cancellationToken = default);
+    Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
     Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default);
 }
