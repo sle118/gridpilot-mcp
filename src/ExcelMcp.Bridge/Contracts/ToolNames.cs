@@ -4,6 +4,7 @@ public static class ToolNames
 {
     public const string SessionListOpenWorkbooks = "session_list_open_workbooks";
     public const string SessionConnectWorkbook = "session_connect_workbook";
+    public const string SessionCreateWorkbook = "session_create_workbook";
     public const string SessionListConnections = "session_list_connections";
     public const string SessionGetConnection = "session_get_connection";
     public const string SessionDisconnectWorkbook = "session_disconnect_workbook";

@@ -93,7 +93,6 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
 
             return await ConnectBridgeOwnedAsync(
                 workbookPath: explicitPath,
-                workbookName: Path.GetFileName(explicitPath),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -132,6 +131,44 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         }
 
         return await ConnectAttachedAsync(matches[0], reuseForPath: matches[0].FullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<WorkbookConnectionResult> CreateWorkbookAsync(
+        WorkbookCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var explicitPath = NormalizePathOrNull(request.WorkbookPath);
+        if (explicitPath is null)
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_path_required",
+                "Creating a workbook requires 'workbookPath'.");
+        }
+
+        _logger.LogInfo(nameof(WorkbookServiceResolver), "create_workbook_requested", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = explicitPath
+        });
+
+        var parentDirectory = Path.GetDirectoryName(explicitPath);
+        if (string.IsNullOrWhiteSpace(parentDirectory) || !Directory.Exists(parentDirectory))
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_directory_not_found",
+                $"The parent directory for '{explicitPath}' does not exist.");
+        }
+
+        if (File.Exists(explicitPath))
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_already_exists",
+                $"Workbook '{explicitPath}' already exists.",
+                "Choose a new workbook path or use session_connect_workbook to open the existing file.");
+        }
+
+        return await CreateBridgeOwnedWorkbookAsync(explicitPath, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default)
@@ -317,7 +354,6 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
 
     private async Task<WorkbookConnectionResult> ConnectBridgeOwnedAsync(
         string workbookPath,
-        string workbookName,
         CancellationToken cancellationToken)
     {
         if (TryGetExistingConnection(workbookPath, out var existing))
@@ -332,13 +368,13 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         }
 
         var (session, service) = GetOrCreateBridgeOwnedService();
-        await using var workbook = await session.OpenWorkbookAsync(workbookPath, cancellationToken).ConfigureAwait(false);
+        var workbook = await session.EnsureWorkbookOpenAsync(workbookPath, cancellationToken).ConfigureAwait(false);
 
         var diagnostics = await session.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
         var connection = new ConnectedWorkbookConnection(
             ConnectionId: Guid.NewGuid().ToString("N"),
-            WorkbookName: workbookName,
-            WorkbookPath: workbookPath,
+            WorkbookName: workbook.Name,
+            WorkbookPath: workbook.FullPath,
             ConnectionMode: "bridge_owned",
             SessionMode: diagnostics.SessionMode == ExcelSessionMode.AttachToRunning ? "attach" : "create-new",
             AttachTarget: DiagnosticsAttachTargetToString(diagnostics.AttachTargetMode),
@@ -352,6 +388,46 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         {
             ["connectionId"] = connection.ConnectionId,
             ["workbookPath"] = workbookPath
+        });
+        return connection.ToConnectResult(reusedExistingConnection: false, GetApprovalStatus(connection));
+    }
+
+    private async Task<WorkbookConnectionResult> CreateBridgeOwnedWorkbookAsync(
+        string workbookPath,
+        CancellationToken cancellationToken)
+    {
+        if (TryGetExistingConnection(workbookPath, out var existing))
+        {
+            _logger.LogInfo(nameof(WorkbookServiceResolver), "connect_reused", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionId"] = existing!.ConnectionId,
+                ["connectionMode"] = existing.ConnectionMode
+            });
+            return existing!.ToConnectResult(reusedExistingConnection: true, GetApprovalStatus(existing));
+        }
+
+        var (session, service) = GetOrCreateBridgeOwnedService();
+        var workbook = await session.CreateWorkbookAsync(workbookPath, cancellationToken).ConfigureAwait(false);
+
+        var diagnostics = await session.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        var connection = new ConnectedWorkbookConnection(
+            ConnectionId: Guid.NewGuid().ToString("N"),
+            WorkbookName: workbook.Name,
+            WorkbookPath: workbook.FullPath,
+            ConnectionMode: "bridge_owned",
+            SessionMode: diagnostics.SessionMode == ExcelSessionMode.AttachToRunning ? "attach" : "create-new",
+            AttachTarget: DiagnosticsAttachTargetToString(diagnostics.AttachTargetMode),
+            IsOpenInExcel: false,
+            Session: session,
+            Service: service,
+            OwnsSession: false);
+
+        RegisterConnection(connection);
+        _logger.LogInfo(nameof(WorkbookServiceResolver), "create_bridge_owned", new Dictionary<string, object?>
+        {
+            ["connectionId"] = connection.ConnectionId,
+            ["workbookPath"] = connection.WorkbookPath
         });
         return connection.ToConnectResult(reusedExistingConnection: false, GetApprovalStatus(connection));
     }

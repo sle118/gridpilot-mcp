@@ -76,6 +76,18 @@ public sealed class McpToolServer
                 }
             })),
         new(
+            ToolNames.SessionCreateWorkbook,
+            "Create a new workbook at a full path and connect it through a bridge-owned session.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" }
+                },
+                required = new[] { "workbookPath" }
+            })),
+        new(
             ToolNames.SessionListConnections,
             "List connected workbooks tracked by this MCP host.",
             ToJsonElement(new { type = "object", properties = new { } })),
@@ -373,6 +385,7 @@ public sealed class McpToolServer
         {
             ToolNames.SessionListOpenWorkbooks => HandleListOpenWorkbooksAsync(cancellationToken),
             ToolNames.SessionConnectWorkbook => HandleConnectWorkbookAsync(arguments, cancellationToken),
+            ToolNames.SessionCreateWorkbook => HandleCreateWorkbookAsync(arguments, cancellationToken),
             ToolNames.SessionListConnections => HandleListConnectionsAsync(cancellationToken),
             ToolNames.SessionGetConnection => HandleGetConnectionAsync(arguments, cancellationToken),
             ToolNames.SessionDisconnectWorkbook => HandleDisconnectWorkbookAsync(arguments, cancellationToken),
@@ -411,6 +424,13 @@ public sealed class McpToolServer
             WorkbookPath: GetOptionalString(arguments, "workbookPath"),
             WorkbookName: GetOptionalString(arguments, "workbookName"));
         return ExecuteAsObjectAsync(_workbookServices.ConnectAsync(request, cancellationToken));
+    }
+
+    private Task<object> HandleCreateWorkbookAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var request = new WorkbookCreateRequest(
+            WorkbookPath: GetRequiredString(arguments, "workbookPath"));
+        return ExecuteAsObjectAsync(_workbookServices.CreateWorkbookAsync(request, cancellationToken));
     }
 
     private Task<object> HandleListConnectionsAsync(CancellationToken cancellationToken) =>
@@ -927,6 +947,11 @@ public sealed class McpToolServer
             Task.FromResult<IReadOnlyList<WorkbookSummary>>(Array.Empty<WorkbookSummary>());
 
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(new WorkbookTargetResolutionException(
+                "connection_not_supported",
+                "Workbook connections are not available on a shared workbook service resolver."));
+
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(new WorkbookTargetResolutionException(
                 "connection_not_supported",
                 "Workbook connections are not available on a shared workbook service resolver."));

@@ -8,6 +8,8 @@ public interface IExcelApplicationHandle : IAsyncDisposable
     void RestoreState(SessionState state);
 
     Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default);
+    Task<WorkbookSummary> EnsureWorkbookOpenAsync(string path, CancellationToken cancellationToken = default);
+    Task<WorkbookSummary> CreateWorkbookAsync(string path, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default);
     Task WaitForAsyncQueriesAsync(TimeSpan timeout, CancellationToken cancellationToken = default);
 }

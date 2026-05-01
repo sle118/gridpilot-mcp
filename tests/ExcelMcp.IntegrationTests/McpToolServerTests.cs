@@ -35,6 +35,7 @@ public sealed class McpToolServerTests
             {
                 ToolNames.SessionListOpenWorkbooks,
                 ToolNames.SessionConnectWorkbook,
+                ToolNames.SessionCreateWorkbook,
                 ToolNames.SessionListConnections,
                 ToolNames.SessionGetConnection,
                 ToolNames.SessionDisconnectWorkbook,
@@ -91,6 +92,22 @@ public sealed class McpToolServerTests
         Assert.Equal("missing", result.StructuredContent.GetProperty("approvalState").GetString());
         Assert.Equal(JsonValueKind.Null, result.StructuredContent.GetProperty("approvalExpiresAtUtc").ValueKind);
         Assert.Equal(JsonValueKind.Null, result.StructuredContent.GetProperty("approvalLastUsedAtUtc").ValueKind);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_CreateWorkbook_ReturnsBridgeOwnedConnection()
+    {
+        var server = new McpToolServer(new ConnectionAwareResolver());
+
+        var result = await server.CallToolAsync(
+            ToolNames.SessionCreateWorkbook,
+            JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\created.xlsx" }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("bridge_owned", result.StructuredContent.GetProperty("connectionMode").GetString());
+        Assert.Equal("create-new", result.StructuredContent.GetProperty("sessionMode").GetString());
+        Assert.Equal(@"C:\temp\created.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
+        Assert.Equal("not_applicable", result.StructuredContent.GetProperty("approvalState").GetString());
     }
 
     [Fact]
@@ -686,6 +703,9 @@ public sealed class McpToolServerTests
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(_exception);
 
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(_exception);
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromException<IReadOnlyList<WorkbookConnectionInfo>>(_exception);
 
@@ -720,6 +740,9 @@ public sealed class McpToolServerTests
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(_exception);
 
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(_exception);
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromException<IReadOnlyList<WorkbookConnectionInfo>>(_exception);
 
@@ -745,6 +768,9 @@ public sealed class McpToolServerTests
             new TaskCompletionSource<IReadOnlyList<WorkbookSummary>>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
 
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<WorkbookConnectionResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             new TaskCompletionSource<WorkbookConnectionResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
@@ -782,6 +808,9 @@ public sealed class McpToolServerTests
             Task.FromResult<IReadOnlyList<WorkbookSummary>>(Array.Empty<WorkbookSummary>());
 
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(new InvalidOperationException("not used"));
+
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(new InvalidOperationException("not used"));
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
@@ -839,6 +868,21 @@ public sealed class McpToolServerTests
                 null,
                 null));
 
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookConnectionResult(
+                true,
+                "conn-created",
+                "created.xlsx",
+                request.WorkbookPath,
+                "bridge_owned",
+                "create-new",
+                null,
+                false,
+                false,
+                "not_applicable",
+                null,
+                null));
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(
             [
@@ -877,6 +921,21 @@ public sealed class McpToolServerTests
 
         public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(BuildConnectResult(request.WorkbookPath ?? WorkbookPath));
+
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookConnectionResult(
+                true,
+                "conn-created",
+                "created.xlsx",
+                request.WorkbookPath,
+                "bridge_owned",
+                "create-new",
+                null,
+                false,
+                false,
+                "not_applicable",
+                null,
+                null));
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>([BuildConnectionInfo("conn-1")]);

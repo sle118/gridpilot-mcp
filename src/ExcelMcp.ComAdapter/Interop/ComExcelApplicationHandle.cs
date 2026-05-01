@@ -174,6 +174,100 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         }
     }
 
+    public Task<WorkbookSummary> EnsureWorkbookOpenAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogDebug(nameof(ComExcelApplicationHandle), "ensure_workbook_open_started", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+
+        var workbooks = ComDispatch.GetProperty<object>(_application, "Workbooks");
+        try
+        {
+            var normalizedPath = NormalizePath(path);
+            foreach (var workbookObject in ComDispatch.Enumerate(workbooks))
+            {
+                var workbook = workbookObject;
+                try
+                {
+                    var fullName = ReadWorkbookFullName(workbook);
+                    if (string.Equals(fullName, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInfo(nameof(ComExcelApplicationHandle), "ensure_workbook_open_reused", new Dictionary<string, object?>
+                        {
+                            ["workbookPath"] = normalizedPath
+                        });
+                        return Task.FromResult(ReadWorkbookSummary(workbook, isActive: false));
+                    }
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(workbook);
+                }
+            }
+
+            var openedWorkbook = ComDispatch.InvokeMethod(workbooks, "Open", path)
+                ?? throw new InvalidOperationException($"Excel did not return a workbook for '{path}'.");
+
+            try
+            {
+                _logger.LogInfo(nameof(ComExcelApplicationHandle), "ensure_workbook_opened", new Dictionary<string, object?>
+                {
+                    ["workbookPath"] = normalizedPath
+                });
+                return Task.FromResult(ReadWorkbookSummary(openedWorkbook, isActive: true));
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(openedWorkbook);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(workbooks);
+        }
+    }
+
+    public Task<WorkbookSummary> CreateWorkbookAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogDebug(nameof(ComExcelApplicationHandle), "create_workbook_started", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+
+        var workbooks = ComDispatch.GetProperty<object>(_application, "Workbooks");
+        try
+        {
+            var workbook = ComDispatch.InvokeMethod(workbooks, "Add")
+                ?? throw new InvalidOperationException("Excel did not return a workbook when creating a new workbook.");
+
+            try
+            {
+                ComDispatch.InvokeMethod(workbook, "SaveAs", path);
+                var summary = ReadWorkbookSummary(workbook, isActive: true);
+                _logger.LogInfo(nameof(ComExcelApplicationHandle), "create_workbook_saved", new Dictionary<string, object?>
+                {
+                    ["workbookPath"] = NormalizePath(summary.FullPath)
+                });
+                return Task.FromResult(summary);
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(workbook);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(workbooks);
+        }
+    }
+
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -378,4 +472,10 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         var fullName = ComDispatch.GetProperty<string>(workbook, "FullName");
         return NormalizePath(fullName);
     }
+
+    private static WorkbookSummary ReadWorkbookSummary(object workbook, bool isActive) =>
+        new(
+            Name: ComDispatch.GetProperty<string>(workbook, "Name"),
+            FullPath: ReadWorkbookFullName(workbook),
+            IsActive: isActive);
 }

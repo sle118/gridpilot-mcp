@@ -1,4 +1,5 @@
 using ExcelMcp.Core.Abstractions;
+using System.IO;
 
 namespace ExcelMcp.IntegrationTests.Fakes;
 
@@ -18,6 +19,12 @@ internal sealed class FakeExcelSession : IExcelSession
 
     public Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default) =>
         Task.FromResult(Workbook);
+
+    public Task<WorkbookSummary> EnsureWorkbookOpenAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new WorkbookSummary(Path.GetFileName(path), path, false));
+
+    public Task<WorkbookSummary> CreateWorkbookAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new WorkbookSummary(Path.GetFileName(path), path, true));
 
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(OpenWorkbooks);

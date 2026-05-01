@@ -53,6 +53,24 @@ public sealed class ExcelApplicationSession : IExcelSession
         return _application.OpenWorkbookAsync(path, cancellationToken);
     }
 
+    public Task<WorkbookSummary> EnsureWorkbookOpenAsync(string path, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(nameof(ExcelApplicationSession), "ensure_workbook_open_requested", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+        return _application.EnsureWorkbookOpenAsync(path, cancellationToken);
+    }
+
+    public Task<WorkbookSummary> CreateWorkbookAsync(string path, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(nameof(ExcelApplicationSession), "create_workbook_requested", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+        return _application.CreateWorkbookAsync(path, cancellationToken);
+    }
+
     public Task<ScopedSessionToken> PushOptionsAsync(SessionOptions options, CancellationToken cancellationToken = default) =>
         _scopeManager.PushOptionsAsync(options, cancellationToken);
 

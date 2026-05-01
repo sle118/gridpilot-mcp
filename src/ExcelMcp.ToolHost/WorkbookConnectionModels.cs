@@ -24,6 +24,8 @@ internal sealed record WorkbookConnectionInfo(
 
 internal sealed record WorkbookConnectionRequest(string? WorkbookPath, string? WorkbookName);
 
+internal sealed record WorkbookCreateRequest(string WorkbookPath);
+
 internal sealed record WorkbookConnectionResult(
     bool Succeeded,
     string ConnectionId,

@@ -30,6 +30,7 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
 - lazy MCP host startup with explicit multi-workbook connection management:
   - list open workbooks across running Excel instances
   - connect by visible workbook title or full path
+  - create a brand-new workbook by full path through an explicit bridge-owned create tool
   - reuse connection ids across later workbook tool calls
   - disconnect individual connected workbooks
   - expose attached mutation approval state on connection responses so clients can tell whether one workbook-scoped lease is already active for the current host session
