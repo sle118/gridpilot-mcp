@@ -2,6 +2,10 @@
 
 `test_workbook.xlsx` is the tracked baseline workbook fixture for GridPilot MCP live Excel tests.
 
+Additional tracked fixture artifacts:
+
+- `Book_mcp_test.xlsx`: attached-session troubleshooting and MCP live-surface artifact kept for workbook-identity and owner-resolution regressions. It is not the default baseline fixture for the standard live harness.
+
 Current baseline semantics:
 
 - 5 Power Query queries total
@@ -21,6 +25,7 @@ Current named coverage anchors:
 Rules for maintainers:
 
 - Treat the tracked workbook as the immutable baseline fixture
+- Keep auxiliary fixture artifacts in this folder rather than at the repo root
 - Live tests must copy it to a temp workbook before opening it in Excel
 - Future agents may extend the workbook intentionally, but they must update the live assertions and this metadata note when the baseline contract changes
 

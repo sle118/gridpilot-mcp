@@ -27,10 +27,22 @@ GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop
   - append rows
   - replace table body rows
   - set core table options (`hasHeaders`, `showTotals`)
-- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, richer unsafe-state classification, and workbook-scoped approval leases for attached refresh, probe, temp-query cleanup, query formula edit, range write, and name mutation
-- a widened but still structured MCP stdio host surface for inventory, workbook-name listing, name resolution/read/create/update/delete, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, table get/read/create/resize/append/replace/options, range read, range write, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
+- lazy MCP host startup with explicit multi-workbook connection management:
+  - list open workbooks across running Excel instances
+  - connect by visible workbook title or full path
+  - reuse connection ids across later workbook tool calls
+  - disconnect individual connected workbooks
+  - expose attached mutation approval state on connection responses so clients can tell whether one workbook-scoped lease is already active for the current host session
+- file-backed runtime logging across the host, bridge, and COM adapter:
+  - enabled by `--log-level` / `--log-path` or matching `GRIDPILOT_*` environment variables
+  - structured one-line entries for host lifecycle, MCP tool calls, workbook routing, safety checks, and COM session/workbook activity
+  - kept separate from the MCP proxy’s raw transport logging
+- a shared-session safety seam with session diagnostics, workbook-aware attached-session targeting, richer unsafe-state classification, and workbook-scoped approval leases that now unlock the full attached mutating surface for one workbook during the active lease window, including refresh, probe, temp-query cleanup, query formula edit, range write, name mutation, and table mutation
+- a widened but still structured MCP stdio host surface for session workbook discovery/connect/list/get/disconnect, inventory, workbook-name listing, name resolution/read/create/update/delete, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, table get/read/create/resize/append/replace/options, range read, range write, and explicit attached-session mutation grant/revoke tools, plus structured host-side argument and invocation errors
+- a level-based runtime logging switch on the MCP host surface intended for real-world regression troubleshooting without polluting MCP stdout
 - an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, probing, and lease-gated attached-session mutation
 - a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory and range reads, pre-approval refusal for workbook edits, approved mutation, revoke, and approval expiry against a real running Excel instance
+- workbook identity normalization is now aligned across discovery, connect, approval, safety checks, and attached query mutation so URL-style workbook identities can flow end to end without synthetic local-path rewrites
 - branding assets now folded into `branding/assets/`
 
 ## Important naming note
@@ -49,6 +61,7 @@ The intended architecture remains:
 - mock-first test strategy
 - optional local-only live Excel validation tier
 - eventual safe coexistence between agent operations and active human editing in the same live workbook session
+- explicit workbook connection after MCP startup rather than eager Excel startup during host initialization
 
 ## Immediate gaps
 

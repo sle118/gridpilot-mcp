@@ -1,6 +1,7 @@
 using ExcelMcp.Bridge.Contracts;
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core;
+using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
 using System.Text.Json;
 using ExcelMcp.ToolHost;
@@ -9,20 +10,29 @@ namespace ExcelMcp.ToolHost.Mcp;
 
 public sealed class McpToolServer
 {
+    private static readonly TimeSpan DefaultToolExecutionTimeout = TimeSpan.FromSeconds(30);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
     private readonly IWorkbookServiceResolver _workbookServices;
+    private readonly IGridPilotLogger _logger;
+    private readonly TimeSpan _toolExecutionTimeout;
 
-    internal McpToolServer(IWorkbookServiceResolver workbookServices)
+    internal McpToolServer(
+        IWorkbookServiceResolver workbookServices,
+        IGridPilotLogger? logger = null,
+        TimeSpan? toolExecutionTimeout = null)
     {
         _workbookServices = workbookServices;
+        _logger = logger ?? GridPilotNullLogger.Instance;
+        _toolExecutionTimeout = toolExecutionTimeout ?? DefaultToolExecutionTimeout;
     }
 
-    public McpToolServer(WorkbookService workbookService)
-        : this(new SharedWorkbookServiceResolver(workbookService))
+    public McpToolServer(WorkbookService workbookService, IGridPilotLogger? logger = null, TimeSpan? toolExecutionTimeout = null)
+        : this(new SharedWorkbookServiceResolver(workbookService), logger, toolExecutionTimeout)
     {
     }
 
@@ -32,402 +42,280 @@ public sealed class McpToolServer
             ? "2024-11-05"
             : requestedProtocolVersion;
 
+        _logger.LogInfo(nameof(McpToolServer), "initialize", new Dictionary<string, object?>
+        {
+            ["requestedProtocolVersion"] = requestedProtocolVersion,
+            ["resolvedProtocolVersion"] = protocolVersion
+        });
+
         return new McpInitializeResult(
             protocolVersion,
             Capabilities: new { tools = new { listChanged = false } },
             ServerInfo: new { name = "GridPilot MCP", version = "0.1.0" });
     }
 
-    public IReadOnlyList<McpToolDefinition> ListTools() =>
+    public IReadOnlyList<McpToolDefinition> ListTools()
+    {
+        _logger.LogDebug(nameof(McpToolServer), "list_tools");
+        return
     [
+        new(
+            ToolNames.SessionListOpenWorkbooks,
+            "List open Excel workbooks available for attachment.",
+            ToJsonElement(new { type = "object", properties = new { } })),
+        new(
+            ToolNames.SessionConnectWorkbook,
+            "Connect a workbook by full path or by open workbook title.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    workbookPath = new { type = "string" },
+                    workbookName = new { type = "string" }
+                }
+            })),
+        new(
+            ToolNames.SessionListConnections,
+            "List connected workbooks tracked by this MCP host.",
+            ToJsonElement(new { type = "object", properties = new { } })),
+        new(
+            ToolNames.SessionGetConnection,
+            "Get one connected workbook by connection id.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    connectionId = new { type = "string" }
+                },
+                required = new[] { "connectionId" }
+            })),
+        new(
+            ToolNames.SessionDisconnectWorkbook,
+            "Disconnect one connected workbook by connection id.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    connectionId = new { type = "string" }
+                },
+                required = new[] { "connectionId" }
+            })),
         new(
             ToolNames.WorkbookListInventory,
             "List workbook sheets, tables, connections, and queries.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" }
-                },
-                required = new[] { "workbookPath" }
-            })),
+            BuildTargetSchema()),
         new(
             ToolNames.WorkbookListNames,
             "List workbook and worksheet-scoped Excel names.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" }
-                },
-                required = new[] { "workbookPath" }
-            })),
+            BuildTargetSchema()),
         new(
             ToolNames.QueryGet,
             "Get a workbook query definition by name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    queryName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "queryName" }
-            })),
+            BuildTargetSchema(["queryName"], ("queryName", new { type = "string" }))),
         new(
             ToolNames.NameGet,
             "Resolve one workbook or worksheet-scoped Excel name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    name = new { type = "string" },
-                    sheetName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "name" }
-            })),
+            BuildTargetSchema(
+                ["name"],
+                ("name", new { type = "string" }),
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.NameRead,
             "Read the values currently referenced by one Excel name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    name = new { type = "string" },
-                    sheetName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "name" }
-            })),
+            BuildTargetSchema(
+                ["name"],
+                ("name", new { type = "string" }),
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.NameCreate,
             "Create a workbook or worksheet-scoped Excel name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    name = new { type = "string" },
-                    refersTo = new { type = "string" },
-                    sheetName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "name", "refersTo" }
-            })),
+            BuildTargetSchema(
+                ["name", "refersTo"],
+                ("name", new { type = "string" }),
+                ("refersTo", new { type = "string" }),
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.NameUpdate,
             "Update the target formula for a workbook or worksheet-scoped Excel name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    name = new { type = "string" },
-                    refersTo = new { type = "string" },
-                    sheetName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "name", "refersTo" }
-            })),
+            BuildTargetSchema(
+                ["name", "refersTo"],
+                ("name", new { type = "string" }),
+                ("refersTo", new { type = "string" }),
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.NameDelete,
             "Delete a workbook or worksheet-scoped Excel name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    name = new { type = "string" },
-                    sheetName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "name" }
-            })),
+            BuildTargetSchema(
+                ["name"],
+                ("name", new { type = "string" }),
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.QueryRefresh,
             "Run a targeted refresh for one workbook query.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    queryName = new { type = "string" },
-                    silent = new { type = "boolean" },
-                    preferSynchronousTableRefresh = new { type = "boolean" },
-                    timeoutMs = new { type = "integer" }
-                },
-                required = new[] { "workbookPath", "queryName" }
-            })),
+            BuildTargetSchema(
+                ["queryName"],
+                ("queryName", new { type = "string" }),
+                ("silent", new { type = "boolean" }),
+                ("preferSynchronousTableRefresh", new { type = "boolean" }),
+                ("timeoutMs", new { type = "integer" }))),
         new(
             ToolNames.QueryRunProbe,
             "Create a temporary diagnostic query, load preview rows, and clean up probe artifacts.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    queryName = new { type = "string" },
-                    tempPrefix = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "queryName" }
-            })),
+            BuildTargetSchema(
+                ["queryName"],
+                ("queryName", new { type = "string" }),
+                ("tempPrefix", new { type = "string" }))),
         new(
             ToolNames.QueryCleanupTemp,
             "Delete temporary queries matching a prefix or pattern.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    pattern = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "pattern" }
-            })),
+            BuildTargetSchema(
+                ["pattern"],
+                ("pattern", new { type = "string" }))),
         new(
             ToolNames.QuerySetFormula,
             "Set or replace a workbook query formula by name.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    queryName = new { type = "string" },
-                    formula = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "queryName", "formula" }
-            })),
+            BuildTargetSchema(
+                ["queryName", "formula"],
+                ("queryName", new { type = "string" }),
+                ("formula", new { type = "string" }))),
         new(
             ToolNames.TableGet,
             "Get deeper metadata for one Excel table.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "tableName" }
-            })),
+            BuildTargetSchema(
+                ["tableName"],
+                ("tableName", new { type = "string" }))),
         new(
             ToolNames.TableRead,
             "Read one Excel table with headers and rows.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "tableName" }
-            })),
+            BuildTargetSchema(
+                ["tableName"],
+                ("tableName", new { type = "string" }))),
         new(
             ToolNames.TableCreate,
             "Create one Excel table from an existing rectangular range.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" },
-                    sheetName = new { type = "string" },
-                    address = new { type = "string" },
-                    hasHeaders = new { type = "boolean" }
-                },
-                required = new[] { "workbookPath", "tableName", "sheetName", "address" }
-            })),
+            BuildTargetSchema(
+                ["tableName", "sheetName", "address"],
+                ("tableName", new { type = "string" }),
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }),
+                ("hasHeaders", new { type = "boolean" }))),
         new(
             ToolNames.TableResize,
             "Resize one existing Excel table to a new rectangular range.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" },
-                    sheetName = new { type = "string" },
-                    address = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "tableName", "sheetName", "address" }
-            })),
+            BuildTargetSchema(
+                ["tableName", "sheetName", "address"],
+                ("tableName", new { type = "string" }),
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
         new(
             ToolNames.TableAppendRows,
             "Append one or more rectangular data rows to an Excel table.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" },
-                    values = new
-                    {
-                        type = "array",
-                        items = new
-                        {
-                            type = "array"
-                        }
-                    }
-                },
-                required = new[] { "workbookPath", "tableName", "values" }
-            })),
+            BuildTargetSchema(
+                ["tableName", "values"],
+                ("tableName", new { type = "string" }),
+                ("values", new { type = "array", items = new { type = "array" } }))),
         new(
             ToolNames.TableReplaceRows,
             "Replace the data body rows for an Excel table.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" },
-                    values = new
-                    {
-                        type = "array",
-                        items = new
-                        {
-                            type = "array"
-                        }
-                    }
-                },
-                required = new[] { "workbookPath", "tableName", "values" }
-            })),
+            BuildTargetSchema(
+                ["tableName", "values"],
+                ("tableName", new { type = "string" }),
+                ("values", new { type = "array", items = new { type = "array" } }))),
         new(
             ToolNames.TableSetOptions,
             "Update supported table options such as headers and totals visibility.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    tableName = new { type = "string" },
-                    hasHeaders = new { type = "boolean" },
-                    showTotals = new { type = "boolean" }
-                },
-                required = new[] { "workbookPath", "tableName" }
-            })),
+            BuildTargetSchema(
+                ["tableName"],
+                ("tableName", new { type = "string" }),
+                ("hasHeaders", new { type = "boolean" }),
+                ("showTotals", new { type = "boolean" }))),
         new(
             ToolNames.RangeRead,
             "Read one rectangular workbook range from a specific worksheet.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    sheetName = new { type = "string" },
-                    address = new { type = "string" }
-                },
-                required = new[] { "workbookPath", "sheetName", "address" }
-            })),
+            BuildTargetSchema(
+                ["sheetName", "address"],
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
         new(
             ToolNames.RangeWrite,
             "Write one or more rectangular workbook ranges.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
+            BuildTargetSchema(
+                ["writes"],
+                ("writes", new
                 {
-                    workbookPath = new { type = "string" },
-                    writes = new
+                    type = "array",
+                    items = new
                     {
-                        type = "array",
-                        items = new
+                        type = "object",
+                        properties = new
                         {
-                            type = "object",
-                            properties = new
-                            {
-                                sheetName = new { type = "string" },
-                                address = new { type = "string" },
-                                values = new
-                                {
-                                    type = "array",
-                                    items = new
-                                    {
-                                        type = "array"
-                                    }
-                                }
-                            },
-                            required = new[] { "sheetName", "address", "values" }
-                        }
+                            sheetName = new { type = "string" },
+                            address = new { type = "string" },
+                            values = new { type = "array", items = new { type = "array" } }
+                        },
+                        required = new[] { "sheetName", "address", "values" }
                     }
-                },
-                required = new[] { "workbookPath", "writes" }
-            })),
+                }))),
         new(
             ToolNames.AttachedSessionGrantMutation,
             "Grant a workbook-scoped attached-session mutation approval lease.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" },
-                    ttlMinutes = new { type = "integer" }
-                },
-                required = new[] { "workbookPath" }
-            })),
+            BuildTargetSchema(
+                ("ttlMinutes", new { type = "integer" }))),
         new(
             ToolNames.AttachedSessionRevokeMutation,
             "Revoke a workbook-scoped attached-session mutation approval lease.",
-            ToJsonElement(new
-            {
-                type = "object",
-                properties = new
-                {
-                    workbookPath = new { type = "string" }
-                },
-                required = new[] { "workbookPath" }
-            }))
+            BuildTargetSchema())
     ];
+    }
 
     public async Task<McpToolCallResult> CallToolAsync(string name, JsonElement arguments, CancellationToken cancellationToken = default)
     {
         try
         {
-            object structuredContent = name switch
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_started", new Dictionary<string, object?>
             {
-                ToolNames.WorkbookListInventory => await HandleListInventoryAsync(arguments, cancellationToken),
-                ToolNames.WorkbookListNames => await HandleListNamesAsync(arguments, cancellationToken),
-                ToolNames.QueryGet => await HandleGetQueryAsync(arguments, cancellationToken),
-                ToolNames.NameGet => await HandleGetNameAsync(arguments, cancellationToken),
-                ToolNames.NameRead => await HandleReadNameAsync(arguments, cancellationToken),
-                ToolNames.NameCreate => await HandleCreateNameAsync(arguments, cancellationToken),
-                ToolNames.NameUpdate => await HandleUpdateNameAsync(arguments, cancellationToken),
-                ToolNames.NameDelete => await HandleDeleteNameAsync(arguments, cancellationToken),
-                ToolNames.QueryRefresh => await HandleRefreshAsync(arguments, cancellationToken),
-                ToolNames.QueryRunProbe => await HandleProbeAsync(arguments, cancellationToken),
-                ToolNames.QueryCleanupTemp => await HandleCleanupAsync(arguments, cancellationToken),
-                ToolNames.QuerySetFormula => await HandleSetQueryFormulaAsync(arguments, cancellationToken),
-                ToolNames.TableGet => await HandleTableGetAsync(arguments, cancellationToken),
-                ToolNames.TableRead => await HandleTableReadAsync(arguments, cancellationToken),
-                ToolNames.TableCreate => await HandleTableCreateAsync(arguments, cancellationToken),
-                ToolNames.TableResize => await HandleTableResizeAsync(arguments, cancellationToken),
-                ToolNames.TableAppendRows => await HandleTableAppendRowsAsync(arguments, cancellationToken),
-                ToolNames.TableReplaceRows => await HandleTableReplaceRowsAsync(arguments, cancellationToken),
-                ToolNames.TableSetOptions => await HandleTableSetOptionsAsync(arguments, cancellationToken),
-                ToolNames.RangeRead => await HandleRangeReadAsync(arguments, cancellationToken),
-                ToolNames.RangeWrite => await HandleRangeWriteAsync(arguments, cancellationToken),
-                ToolNames.AttachedSessionGrantMutation => await HandleGrantApprovalAsync(arguments, cancellationToken),
-                ToolNames.AttachedSessionRevokeMutation => await HandleRevokeApprovalAsync(arguments, cancellationToken),
-                _ => throw new McpToolInputException("invalid_tool", $"Unknown tool '{name}'.")
-            };
+                ["toolName"] = name,
+                ["argumentKeys"] = GetArgumentKeys(arguments)
+            });
+
+            _logger.LogDebug(nameof(McpToolServer), "tool_call_dispatching", new Dictionary<string, object?>
+            {
+                ["toolName"] = name
+            });
+
+            var toolTask = Task.Run(
+                async () => await DispatchToolAsync(name, arguments, cancellationToken).ConfigureAwait(false),
+                cancellationToken);
+            var timeoutTask = Task.Delay(_toolExecutionTimeout, cancellationToken);
+            var completedTask = await Task.WhenAny(toolTask, timeoutTask).ConfigureAwait(false);
+            if (completedTask == timeoutTask)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _logger.LogInfo(nameof(McpToolServer), "tool_call_timed_out", new Dictionary<string, object?>
+                {
+                    ["toolName"] = name,
+                    ["timeoutMs"] = _toolExecutionTimeout.TotalMilliseconds
+                });
+
+                return BuildErrorResult(new McpToolError(
+                    "tool_timeout",
+                    $"Tool '{name}' timed out.",
+                    $"Tool execution exceeded {_toolExecutionTimeout.TotalSeconds:0.###} seconds.",
+                    nameof(McpToolServer)));
+            }
+
+            object structuredContent = await toolTask.ConfigureAwait(false);
 
             var structuredJson = ToJsonElement(structuredContent);
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_finished", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["isError"] = IsErrorResult(structuredJson)
+            });
             return new McpToolCallResult(
                 Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(structuredContent, JsonOptions) } },
                 StructuredContent: structuredJson,
@@ -435,110 +323,199 @@ public sealed class McpToolServer
         }
         catch (McpToolInputException ex)
         {
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_failed", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["code"] = ex.Code
+            }, ex);
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer)));
+        }
+        catch (WorkbookTargetResolutionException ex)
+        {
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_failed", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["code"] = ex.Code
+            }, ex);
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
         }
         catch (ExcelSessionTargetException ex)
         {
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_failed", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["code"] = ex.Code
+            }, ex);
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
         }
         catch (AttachedMutationApprovalModeException ex)
         {
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_failed", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["code"] = ex.Code
+            }, ex);
             return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(McpToolServer), "tool_call_failed", new Dictionary<string, object?>
+            {
+                ["toolName"] = name,
+                ["code"] = "tool_call_failed"
+            }, ex);
             return BuildErrorResult(new McpToolError("tool_call_failed", ex.Message, ex.InnerException?.Message, nameof(McpToolServer)));
         }
     }
 
+    private Task<object> DispatchToolAsync(string name, JsonElement arguments, CancellationToken cancellationToken) =>
+        name switch
+        {
+            ToolNames.SessionListOpenWorkbooks => HandleListOpenWorkbooksAsync(cancellationToken),
+            ToolNames.SessionConnectWorkbook => HandleConnectWorkbookAsync(arguments, cancellationToken),
+            ToolNames.SessionListConnections => HandleListConnectionsAsync(cancellationToken),
+            ToolNames.SessionGetConnection => HandleGetConnectionAsync(arguments, cancellationToken),
+            ToolNames.SessionDisconnectWorkbook => HandleDisconnectWorkbookAsync(arguments, cancellationToken),
+            ToolNames.WorkbookListInventory => HandleListInventoryAsync(arguments, cancellationToken),
+            ToolNames.WorkbookListNames => HandleListNamesAsync(arguments, cancellationToken),
+            ToolNames.QueryGet => HandleGetQueryAsync(arguments, cancellationToken),
+            ToolNames.NameGet => HandleGetNameAsync(arguments, cancellationToken),
+            ToolNames.NameRead => HandleReadNameAsync(arguments, cancellationToken),
+            ToolNames.NameCreate => HandleCreateNameAsync(arguments, cancellationToken),
+            ToolNames.NameUpdate => HandleUpdateNameAsync(arguments, cancellationToken),
+            ToolNames.NameDelete => HandleDeleteNameAsync(arguments, cancellationToken),
+            ToolNames.QueryRefresh => HandleRefreshAsync(arguments, cancellationToken),
+            ToolNames.QueryRunProbe => HandleProbeAsync(arguments, cancellationToken),
+            ToolNames.QueryCleanupTemp => HandleCleanupAsync(arguments, cancellationToken),
+            ToolNames.QuerySetFormula => HandleSetQueryFormulaAsync(arguments, cancellationToken),
+            ToolNames.TableGet => HandleTableGetAsync(arguments, cancellationToken),
+            ToolNames.TableRead => HandleTableReadAsync(arguments, cancellationToken),
+            ToolNames.TableCreate => HandleTableCreateAsync(arguments, cancellationToken),
+            ToolNames.TableResize => HandleTableResizeAsync(arguments, cancellationToken),
+            ToolNames.TableAppendRows => HandleTableAppendRowsAsync(arguments, cancellationToken),
+            ToolNames.TableReplaceRows => HandleTableReplaceRowsAsync(arguments, cancellationToken),
+            ToolNames.TableSetOptions => HandleTableSetOptionsAsync(arguments, cancellationToken),
+            ToolNames.RangeRead => HandleRangeReadAsync(arguments, cancellationToken),
+            ToolNames.RangeWrite => HandleRangeWriteAsync(arguments, cancellationToken),
+            ToolNames.AttachedSessionGrantMutation => HandleGrantApprovalAsync(arguments, cancellationToken),
+            ToolNames.AttachedSessionRevokeMutation => HandleRevokeApprovalAsync(arguments, cancellationToken),
+            _ => Task.FromException<object>(new McpToolInputException("invalid_tool", $"Unknown tool '{name}'."))
+        };
+
+    private Task<object> HandleListOpenWorkbooksAsync(CancellationToken cancellationToken) =>
+        ExecuteAsObjectAsync(_workbookServices.ListOpenWorkbooksAsync(cancellationToken));
+
+    private Task<object> HandleConnectWorkbookAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var request = new WorkbookConnectionRequest(
+            WorkbookPath: GetOptionalString(arguments, "workbookPath"),
+            WorkbookName: GetOptionalString(arguments, "workbookName"));
+        return ExecuteAsObjectAsync(_workbookServices.ConnectAsync(request, cancellationToken));
+    }
+
+    private Task<object> HandleListConnectionsAsync(CancellationToken cancellationToken) =>
+        ExecuteAsObjectAsync(_workbookServices.ListConnectionsAsync(cancellationToken));
+
+    private Task<object> HandleGetConnectionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var connectionId = GetRequiredString(arguments, "connectionId");
+        return ExecuteAsObjectAsync(_workbookServices.GetConnectionAsync(connectionId, cancellationToken));
+    }
+
+    private Task<object> HandleDisconnectWorkbookAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var connectionId = GetRequiredString(arguments, "connectionId");
+        return ExecuteAsObjectAsync(_workbookServices.DisconnectAsync(connectionId, cancellationToken));
+    }
+
     private async Task<object> HandleListInventoryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ListInventoryAsync(workbookPath, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ListInventoryAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleListNamesAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ListNamesAsync(workbookPath, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ListNamesAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleGetQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var queryName = GetRequiredString(arguments, "queryName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.GetQueryAsync(workbookPath, queryName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.GetQueryAsync(resolved.WorkbookPath, queryName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleGetNameAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var name = GetRequiredString(arguments, "name");
         var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.GetNameAsync(workbookPath, name, sheetName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.GetNameAsync(resolved.WorkbookPath, name, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleReadNameAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var name = GetRequiredString(arguments, "name");
         var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ReadNamedRangeAsync(workbookPath, name, sheetName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ReadNamedRangeAsync(resolved.WorkbookPath, name, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleCreateNameAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var name = GetRequiredString(arguments, "name");
         var refersTo = GetRequiredString(arguments, "refersTo");
         var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.CreateNameAsync(workbookPath, name, refersTo, sheetName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.CreateNameAsync(resolved.WorkbookPath, name, refersTo, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleUpdateNameAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var name = GetRequiredString(arguments, "name");
         var refersTo = GetRequiredString(arguments, "refersTo");
         var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.UpdateNameAsync(workbookPath, name, refersTo, sheetName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.UpdateNameAsync(resolved.WorkbookPath, name, refersTo, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleDeleteNameAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var name = GetRequiredString(arguments, "name");
         var sheetName = GetOptionalString(arguments, "sheetName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.DeleteNameAsync(workbookPath, name, sheetName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.DeleteNameAsync(resolved.WorkbookPath, name, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleRefreshAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var queryName = GetRequiredString(arguments, "queryName");
         var options = new RefreshOptions(
             Silent: GetOptionalBoolean(arguments, "silent") ?? true,
@@ -546,117 +523,117 @@ public sealed class McpToolServer
             Timeout: GetOptionalInt32(arguments, "timeoutMs") is int timeoutMs ? TimeSpan.FromMilliseconds(timeoutMs) : null);
 
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.RefreshQueryAsync(workbookPath, queryName, options, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.RefreshQueryAsync(resolved.WorkbookPath, queryName, options, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleProbeAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var queryName = GetRequiredString(arguments, "queryName");
         var tempPrefix = GetOptionalString(arguments, "tempPrefix") ?? "tmp_probe_mcp";
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.TryRunQueryAsync(workbookPath, queryName, tempPrefix, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.TryRunQueryAsync(resolved.WorkbookPath, queryName, tempPrefix, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleCleanupAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var pattern = GetRequiredString(arguments, "pattern");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.CleanupTempQueriesAsync(workbookPath, pattern, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.CleanupTempQueriesAsync(resolved.WorkbookPath, pattern, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleSetQueryFormulaAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var queryName = GetRequiredString(arguments, "queryName");
         var formula = GetRequiredString(arguments, "formula");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.SetQueryFormulaAsync(workbookPath, queryName, formula, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.SetQueryFormulaAsync(resolved.WorkbookPath, queryName, formula, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableReadAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var tableName = GetRequiredString(arguments, "tableName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ReadTableAsync(workbookPath, tableName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ReadTableAsync(resolved.WorkbookPath, tableName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableGetAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var tableName = GetRequiredString(arguments, "tableName");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.GetTableAsync(workbookPath, tableName, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.GetTableAsync(resolved.WorkbookPath, tableName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableCreateAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var request = new TableCreateRequest(
             TableName: GetRequiredString(arguments, "tableName"),
             SheetName: GetRequiredString(arguments, "sheetName"),
             Address: GetRequiredString(arguments, "address"),
             HasHeaders: GetOptionalBoolean(arguments, "hasHeaders") ?? true);
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.CreateTableAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.CreateTableAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableResizeAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var request = new TableResizeRequest(
             TableName: GetRequiredString(arguments, "tableName"),
             SheetName: GetRequiredString(arguments, "sheetName"),
             Address: GetRequiredString(arguments, "address"));
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ResizeTableAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ResizeTableAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableAppendRowsAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var request = new TableRowsWriteRequest(
             TableName: GetRequiredString(arguments, "tableName"),
             Values: GetRequiredMatrix(arguments, "values"));
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.AppendTableRowsAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.AppendTableRowsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableReplaceRowsAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var request = new TableRowsWriteRequest(
             TableName: GetRequiredString(arguments, "tableName"),
             Values: GetRequiredMatrix(arguments, "values"));
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ReplaceTableRowsAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ReplaceTableRowsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleTableSetOptionsAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var hasHeaders = GetOptionalBoolean(arguments, "hasHeaders");
         var showTotals = GetOptionalBoolean(arguments, "showTotals");
         if (hasHeaders is null && showTotals is null)
@@ -669,47 +646,50 @@ public sealed class McpToolServer
             HasHeaders: hasHeaders,
             ShowTotals: showTotals);
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.SetTableOptionsAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.SetTableOptionsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleRangeReadAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var sheetName = GetRequiredString(arguments, "sheetName");
         var address = GetRequiredString(arguments, "address");
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.ReadRangeAsync(workbookPath, sheetName, address, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.ReadRangeAsync(resolved.WorkbookPath, sheetName, address, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> HandleRangeWriteAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var request = GetRangeWriteRequest(arguments);
         return await _workbookServices.ExecuteAsync(
-            workbookPath,
-            service => service.WriteRangesAsync(workbookPath, request, cancellationToken),
-            cancellationToken);
+            target,
+            resolved => resolved.Service.WriteRangesAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private Task<object> HandleGrantApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
+        var target = GetWorkbookTarget(arguments);
         var ttl = GetOptionalInt32(arguments, "ttlMinutes") is int ttlMinutes
             ? TimeSpan.FromMinutes(ttlMinutes)
             : (TimeSpan?)null;
 
-        return ExecuteAsObjectAsync(_workbookServices.GrantAttachedMutationApprovalAsync(workbookPath, ttl, cancellationToken));
+        return ExecuteAsObjectAsync(_workbookServices.GrantAttachedMutationApprovalAsync(target, ttl, cancellationToken));
     }
 
     private Task<object> HandleRevokeApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var workbookPath = GetRequiredString(arguments, "workbookPath");
-        return ExecuteAsObjectAsync(_workbookServices.RevokeAttachedMutationApprovalAsync(workbookPath, cancellationToken));
+        var target = GetWorkbookTarget(arguments);
+        return ExecuteAsObjectAsync(_workbookServices.RevokeAttachedMutationApprovalAsync(target, cancellationToken));
     }
+
+    private static WorkbookTarget GetWorkbookTarget(JsonElement arguments) =>
+        new(GetOptionalString(arguments, "workbookPath"), GetOptionalString(arguments, "connectionId"));
 
     private static bool IsErrorResult(JsonElement result) =>
         result.ValueKind == JsonValueKind.Object &&
@@ -766,8 +746,47 @@ public sealed class McpToolServer
         return null;
     }
 
+    private static JsonElement BuildTargetSchema(
+        string[] requiredProperties,
+        params (string Name, object Schema)[] properties)
+    {
+        var dictionary = new Dictionary<string, object?>
+        {
+            ["workbookPath"] = new { type = "string" },
+            ["connectionId"] = new { type = "string" }
+        };
+
+        foreach (var (name, schema) in properties)
+        {
+            dictionary[name] = schema;
+        }
+
+        return ToJsonElement(new
+        {
+            type = "object",
+            properties = dictionary,
+            required = requiredProperties
+        });
+    }
+
+    private static JsonElement BuildTargetSchema(params (string Name, object Schema)[] properties) =>
+        BuildTargetSchema(Array.Empty<string>(), properties);
+
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
+
+    private static string[] GetArgumentKeys(JsonElement arguments)
+    {
+        if (arguments.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        return arguments.EnumerateObject()
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     private static RangeWriteRequest GetRangeWriteRequest(JsonElement element)
     {
@@ -869,8 +888,8 @@ public sealed class McpToolServer
             _ => throw new McpToolInputException("invalid_arguments", "Range write cell values must be scalars or null.")
         };
 
-    private static async Task<object> ExecuteAsObjectAsync<T>(Task<T> task) where T : class =>
-        await task.ConfigureAwait(false);
+    private static async Task<object> ExecuteAsObjectAsync<T>(Task<T> task) =>
+        (object)(await task.ConfigureAwait(false))!;
 
     private static McpToolCallResult BuildErrorResult(McpToolError error)
     {
@@ -891,19 +910,48 @@ public sealed class McpToolServer
             _workbookService = workbookService;
         }
 
-        public Task<T> ExecuteAsync<T>(string workbookPath, Func<WorkbookService, Task<T>> action, CancellationToken cancellationToken = default) =>
-            action(_workbookService);
+        public Task<T> ExecuteAsync<T>(WorkbookTarget target, Func<ResolvedWorkbookContext, Task<T>> action, CancellationToken cancellationToken = default)
+        {
+            var workbookPath = target.WorkbookPath;
+            if (string.IsNullOrWhiteSpace(workbookPath))
+            {
+                throw new WorkbookTargetResolutionException(
+                    "workbook_target_required",
+                    "This tool requires 'workbookPath' when the server is using a shared workbook service.");
+            }
 
-        public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(string workbookPath, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            return action(new ResolvedWorkbookContext(workbookPath, target.ConnectionId, _workbookService));
+        }
+
+        public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkbookSummary>>(Array.Empty<WorkbookSummary>());
+
+        public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(new WorkbookTargetResolutionException(
+                "connection_not_supported",
+                "Workbook connections are not available on a shared workbook service resolver."));
+
+        public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(Array.Empty<WorkbookConnectionInfo>());
+
+        public Task<WorkbookConnectionInfo> GetConnectionAsync(string connectionId, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionInfo>(new WorkbookTargetResolutionException(
+                "connection_not_found",
+                $"No workbook connection with id '{connectionId}' exists."));
+
+        public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookDisconnectResult(true, connectionId, string.Empty, false));
+
+        public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromException<AttachedMutationApprovalGrantResult>(new AttachedMutationApprovalModeException(
                 "attached_session_approval_not_applicable",
                 "Attached-session mutation approval is not available on a shared workbook service resolver.",
-                "Use the host-owned workbook service resolver in attach mode."));
+                "Use the host-owned workbook service resolver with an attached workbook target."));
 
-        public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(string workbookPath, CancellationToken cancellationToken = default) =>
+        public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
             Task.FromException<AttachedMutationApprovalRevokeResult>(new AttachedMutationApprovalModeException(
                 "attached_session_approval_not_applicable",
                 "Attached-session mutation approval is not available on a shared workbook service resolver.",
-                "Use the host-owned workbook service resolver in attach mode."));
+                "Use the host-owned workbook service resolver with an attached workbook target."));
     }
 }

@@ -8,6 +8,7 @@
     <ProjectReference Include="../../src/ExcelMcp.Core/ExcelMcp.Core.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.Bridge/ExcelMcp.Bridge.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.ToolHost/ExcelMcp.ToolHost.csproj" />
+    <ProjectReference Include="../../src/ExcelMcp.ToolProxy/ExcelMcp.ToolProxy.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.ComAdapter/ExcelMcp.ComAdapter.csproj" />
   </ItemGroup>
   <ItemGroup>

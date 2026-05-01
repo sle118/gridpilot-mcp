@@ -1,4 +1,5 @@
 using ExcelMcp.Core;
+using ExcelMcp.Core.Logging;
 
 namespace ExcelMcp.ToolHost;
 
@@ -8,13 +9,20 @@ internal enum SessionMode
     Attach = 1
 }
 
-internal sealed record HostOptions(SessionMode SessionMode, SessionAttachTargetMode AttachTarget, bool Visible)
+internal sealed record HostOptions(
+    SessionMode SessionMode,
+    SessionAttachTargetMode AttachTarget,
+    bool Visible,
+    GridPilotLogLevel LogLevel,
+    string? LogPath)
 {
     public static HostOptions Parse(string[] args)
     {
         var mode = ReadModeFromEnvironment();
         var attachTarget = ReadAttachTargetFromEnvironment();
         var visible = ReadVisibleFromEnvironment();
+        var logLevel = ReadLogLevelFromEnvironment();
+        var logPath = ReadLogPathFromEnvironment();
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -36,14 +44,34 @@ internal sealed record HostOptions(SessionMode SessionMode, SessionAttachTargetM
             {
                 index++;
                 attachTarget = ParseAttachTarget(args[index]);
+                continue;
+            }
+
+            if (string.Equals(argument, "--log-level", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            {
+                index++;
+                logLevel = ParseLogLevel(args[index]);
+                continue;
+            }
+
+            if (string.Equals(argument, "--log-path", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            {
+                index++;
+                logPath = args[index];
+                continue;
             }
         }
 
-        return new HostOptions(mode, attachTarget, visible);
+        if (logLevel != GridPilotLogLevel.Off && string.IsNullOrWhiteSpace(logPath))
+        {
+            logPath = System.IO.Path.Combine(Environment.CurrentDirectory, ".tmp", "gridpilot-runtime.log");
+        }
+
+        return new HostOptions(mode, attachTarget, visible, logLevel, logPath);
     }
 
     public string ToStartupSummary() =>
-        $"GridPilot MCP starting with sessionMode={SessionModeToString(SessionMode)}, attachTarget={AttachTargetToString(AttachTarget)}, visible={Visible.ToString().ToLowerInvariant()}.";
+        $"GridPilot MCP starting with sessionMode={SessionModeToString(SessionMode)}, attachTarget={AttachTargetToString(AttachTarget)}, visible={Visible.ToString().ToLowerInvariant()}, logLevel={LogLevelToString(LogLevel)}, logPath={LogPath ?? "(none)"}."; 
 
     private static SessionMode ParseMode(string value) =>
         value.Trim().ToLowerInvariant() switch
@@ -82,6 +110,25 @@ internal sealed record HostOptions(SessionMode SessionMode, SessionAttachTargetM
         return string.Equals(envVisible, "1", StringComparison.Ordinal);
     }
 
+    private static GridPilotLogLevel ParseLogLevel(string value) =>
+        value.Trim().ToLowerInvariant() switch
+        {
+            "off" => GridPilotLogLevel.Off,
+            "info" => GridPilotLogLevel.Info,
+            "debug" => GridPilotLogLevel.Debug,
+            "trace" => GridPilotLogLevel.Trace,
+            _ => throw new InvalidOperationException($"Unsupported log level '{value}'. Use 'off', 'info', 'debug', or 'trace'.")
+        };
+
+    private static GridPilotLogLevel ReadLogLevelFromEnvironment()
+    {
+        var envLevel = Environment.GetEnvironmentVariable("GRIDPILOT_LOG_LEVEL");
+        return string.IsNullOrWhiteSpace(envLevel) ? GridPilotLogLevel.Off : ParseLogLevel(envLevel);
+    }
+
+    private static string? ReadLogPathFromEnvironment() =>
+        Environment.GetEnvironmentVariable("GRIDPILOT_LOG_PATH");
+
     private static string SessionModeToString(SessionMode mode) =>
         mode switch
         {
@@ -95,4 +142,7 @@ internal sealed record HostOptions(SessionMode SessionMode, SessionAttachTargetM
             SessionAttachTargetMode.AnyRunningInstance => "any-running",
             _ => "workbook-owner"
         };
+
+    private static string LogLevelToString(GridPilotLogLevel level) =>
+        level.ToString().ToLowerInvariant();
 }

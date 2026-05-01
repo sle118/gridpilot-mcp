@@ -6,24 +6,32 @@ GridPilot MCP is meant to support agent work around live Excel sessions, includi
 
 ## Current policy
 
-Two session modes are relevant:
+The MCP host now starts lazily and can track multiple workbook connections at once. Registration/startup is therefore separate from workbook connection and workbook mutation.
 
-- `create-new`: the host creates a dedicated hidden Excel instance for bridge work
-- `attach`: the host attaches to an already-running Excel instance
+Two session acquisition paths are relevant:
 
-Within `attach` mode, the host now supports two targeting strategies:
+- `bridge-owned`: the host opens a workbook in its own bridge-controlled Excel session
+- `attached`: the host attaches to the already-running Excel instance that owns a requested workbook
+
+Within attached behavior, the host supports two targeting strategies:
 
 - `workbook-owner`: prefer the running Excel instance that already owns the requested workbook path
 - `any-running`: attach to any running Excel instance when workbook-aware targeting is not required
 
-The default host behavior is `workbook-owner`, because the current MCP tool surface always includes a workbook path.
+The preferred attached behavior is `workbook-owner`, because it keeps connected live-workbook targeting deterministic.
 
 The current policy is deliberately conservative:
 
-- read-only operations are allowed in either mode
+- read-only operations are allowed in either connection mode
 - mutating operations in attached mode require an explicit workbook-scoped approval lease
 - the bridge does not silently attach to an already-open user workbook and mutate it
-- workbook-aware attached acquisition refuses to guess when zero or multiple candidate running instances match the requested workbook path
+- workbook-aware attached acquisition refuses to guess when zero or multiple candidate running instances match the requested workbook path or visible workbook title
+
+Agents are expected to:
+
+1. list open workbooks when needed
+2. connect explicitly by workbook title or path
+3. carry the returned `connectionId` into later workbook tool calls
 
 Read-only operations currently include:
 
@@ -79,7 +87,11 @@ Approval leases are currently:
 - in-memory and host-local
 - scoped to one normalized workbook path
 - explicitly granted and revoked through MCP tools
+- broad across the workbook's attached mutating surface, so one active lease covers later attached mutating tools for that same workbook until expiry or revoke
+- observable on the connection surface so clients can see whether an attached workbook currently has an active lease, instead of re-requesting approval blindly
 - automatically expired after a configurable TTL, with a default of 10 minutes
+
+Connected-workbook identity is still the normalized workbook path internally, even when an agent connects by visible workbook title and then uses `connectionId` for later calls.
 
 ## Save expectations
 
@@ -96,6 +108,7 @@ This avoids hidden differences between tool callers and keeps workbook-close beh
 - the current unsafe-state detection is still heuristic and relies on readiness, interactivity, calculation state, and derived edit/modal signals rather than deep UI inspection
 - it does not yet provide a lease/lock model for coordinated shared mutation
 - attached mutation approval is a trust/coordination mechanism, not an authentication system
+- multi-workbook connection support does not yet add a stronger shared lock/lease model between human edits and agent edits
 - the approved attached mutation surface is still narrow and limited to refresh, probe, temp-query cleanup, query formula edits, name lifecycle, and rectangular range writes
 - attached-session live validation is supported, but gated separately because workstation setup still determines whether the intended running workbook owner can be prepared cleanly for attachment
 

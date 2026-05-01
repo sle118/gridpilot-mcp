@@ -9,4 +9,5 @@ TestResults/
 artifacts/
 .tmp/
 *.tmp.xlsx
+/Book_mcp_test.xlsx
 *.generated.*

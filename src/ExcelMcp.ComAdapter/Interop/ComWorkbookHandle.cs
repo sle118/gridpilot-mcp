@@ -1,5 +1,6 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
 using System.Collections;
 using System.Diagnostics;
@@ -12,12 +13,14 @@ namespace ExcelMcp.ComAdapter.Interop;
 internal sealed class ComWorkbookHandle : IWorkbookHandle
 {
     private readonly object _workbook;
+    private readonly IGridPilotLogger _logger;
     private readonly bool _closeOnDispose;
     private bool _closed;
 
-    public ComWorkbookHandle(object workbook, bool closeOnDispose = true)
+    public ComWorkbookHandle(object workbook, IGridPilotLogger? logger = null, bool closeOnDispose = true)
     {
         _workbook = workbook;
+        _logger = logger ?? GridPilotNullLogger.Instance;
         _closeOnDispose = closeOnDispose;
     }
 
@@ -47,6 +50,11 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
     {
         cancellationToken.ThrowIfCancellationRequested();
         ComDispatch.InvokeMethod(_workbook, "Save");
+        _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_saved", new Dictionary<string, object?>
+        {
+            ["workbookName"] = Name,
+            ["workbookPath"] = FullPath
+        });
         return Task.CompletedTask;
     }
 
@@ -63,6 +71,12 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         {
             ComDispatch.InvokeMethod(_workbook, "Close", saveChanges);
             _closed = true;
+            _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_closed", new Dictionary<string, object?>
+            {
+                ["workbookName"] = Name,
+                ["workbookPath"] = FullPath,
+                ["saveChanges"] = saveChanges
+            });
             return Task.CompletedTask;
         }
         finally

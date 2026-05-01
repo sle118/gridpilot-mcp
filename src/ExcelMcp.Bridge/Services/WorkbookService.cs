@@ -1,5 +1,6 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
 
 namespace ExcelMcp.Bridge.Services;
@@ -8,15 +9,17 @@ public sealed class WorkbookService
 {
     private readonly IExcelSession _session;
     private readonly WorkbookOperationSafety _operationSafety;
+    private readonly IGridPilotLogger _logger;
     private static readonly SessionOptions QuietSessionOptions = new(
         DisplayAlerts: false,
         ScreenUpdating: false,
         EnableEvents: false);
 
-    public WorkbookService(IExcelSession session, WorkbookOperationSafety? operationSafety = null)
+    public WorkbookService(IExcelSession session, WorkbookOperationSafety? operationSafety = null, IGridPilotLogger? logger = null)
     {
         _session = session;
-        _operationSafety = operationSafety ?? new WorkbookOperationSafety(session);
+        _logger = logger ?? GridPilotNullLogger.Instance;
+        _operationSafety = operationSafety ?? new WorkbookOperationSafety(session, logger: _logger);
     }
 
     public async Task<QueryDefinition> GetQueryAsync(string workbookPath, string queryName, CancellationToken cancellationToken = default)
@@ -49,10 +52,22 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.CreateNameAsync(name, refersTo, sheetName, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "name_created", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            });
             return new NameMutationResult(true, workbookPath, name, "create", GetScope(sheetName), sheetName, refersTo);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "name_create_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            }, ex);
             return BuildNameMutationError(workbookPath, name, "create", sheetName, refersTo, ex);
         }
     }
@@ -75,10 +90,22 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.UpdateNameAsync(name, refersTo, sheetName, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "name_updated", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            });
             return new NameMutationResult(true, workbookPath, name, "update", GetScope(sheetName), sheetName, refersTo);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "name_update_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            }, ex);
             return BuildNameMutationError(workbookPath, name, "update", sheetName, refersTo, ex);
         }
     }
@@ -100,10 +127,22 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.DeleteNameAsync(name, sheetName, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "name_deleted", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            });
             return new NameMutationResult(true, workbookPath, name, "delete", GetScope(sheetName), sheetName);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "name_delete_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["name"] = name,
+                ["sheetName"] = sheetName
+            }, ex);
             return BuildNameMutationError(workbookPath, name, "delete", sheetName, null, ex);
         }
     }
@@ -145,6 +184,14 @@ public sealed class WorkbookService
         var tables = await workbook.ListTablesAsync(cancellationToken);
         var queries = await workbook.ListQueriesAsync(cancellationToken);
         var connections = await workbook.ListConnectionsAsync(cancellationToken);
+        _logger.LogDebug(nameof(WorkbookService), "inventory_listed", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = workbookPath,
+            ["sheetCount"] = sheets.Count,
+            ["tableCount"] = tables.Count,
+            ["queryCount"] = queries.Count,
+            ["connectionCount"] = connections.Count
+        });
         return new WorkbookInventory(sheets, tables, queries, connections);
     }
 
@@ -167,6 +214,13 @@ public sealed class WorkbookService
                 await workbook.SaveAsync(cancellationToken);
             }
 
+            _logger.LogInfo(nameof(WorkbookService), "query_refreshed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = queryName,
+                ["succeeded"] = result.Succeeded,
+                ["mode"] = result.Mode
+            });
             return result;
         }
 
@@ -178,6 +232,13 @@ public sealed class WorkbookService
                 await workbook.SaveAsync(cancellationToken);
             }
 
+            _logger.LogInfo(nameof(WorkbookService), "query_refreshed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = queryName,
+                ["succeeded"] = result.Succeeded,
+                ["mode"] = result.Mode
+            });
             return result;
         }
     }
@@ -193,7 +254,15 @@ public sealed class WorkbookService
         await using var _ = await _session.BeginScopeAsync(QuietSessionOptions, cancellationToken);
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
         var tempName = $"{tempPrefix}_{queryName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
-        return await workbook.RunQueryProbeAsync(new QueryProbeRequest(queryName, tempName), cancellationToken);
+        var result = await workbook.RunQueryProbeAsync(new QueryProbeRequest(queryName, tempName), cancellationToken);
+        _logger.LogInfo(nameof(WorkbookService), "query_probe_ran", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = workbookPath,
+            ["queryName"] = queryName,
+            ["tempPrefix"] = tempPrefix,
+            ["succeeded"] = result.Succeeded
+        });
+        return result;
     }
 
     public async Task<CleanupResult> CleanupTempQueriesAsync(string workbookPath, string pattern, CancellationToken cancellationToken = default)
@@ -215,6 +284,13 @@ public sealed class WorkbookService
             await workbook.SaveAsync(cancellationToken);
         }
 
+        _logger.LogInfo(nameof(WorkbookService), "temp_queries_cleaned", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = workbookPath,
+            ["pattern"] = pattern,
+            ["deletedCount"] = result.DeletedCount,
+            ["failedCount"] = result.FailedNames.Count
+        });
         return result;
     }
 
@@ -235,10 +311,20 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.SetQueryFormulaAsync(queryName, formula, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "query_formula_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = queryName
+            });
             return new QueryFormulaUpdateResult(true, workbookPath, queryName);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "query_formula_set_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = queryName
+            }, ex);
             return new QueryFormulaUpdateResult(
                 false,
                 workbookPath,
@@ -315,10 +401,21 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.CreateTableAsync(request, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "table_created", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName,
+                ["sheetName"] = request.SheetName
+            });
             return new TableMutationResult(true, workbookPath, request.TableName, "create", request.SheetName, request.Address, HasHeaders: request.HasHeaders);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "table_create_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName
+            }, ex);
             return BuildTableMutationError(workbookPath, request.TableName, "create", request.SheetName, request.Address, null, request.HasHeaders, null, ex);
         }
     }
@@ -369,10 +466,21 @@ public sealed class WorkbookService
             await ValidateTableWriteShapeAsync(workbook, request, cancellationToken);
             await workbook.AppendTableRowsAsync(request, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "table_rows_appended", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName,
+                ["rowCount"] = GetRowCount(request.Values)
+            });
             return new TableMutationResult(true, workbookPath, request.TableName, "append_rows", RowCount: GetRowCount(request.Values));
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "table_append_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName
+            }, ex);
             return BuildTableMutationError(workbookPath, request.TableName, "append_rows", null, null, GetRowCount(request.Values), null, null, ex);
         }
     }
@@ -397,10 +505,21 @@ public sealed class WorkbookService
             await ValidateTableWriteShapeAsync(workbook, request, cancellationToken);
             await workbook.ReplaceTableRowsAsync(request, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "table_rows_replaced", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName,
+                ["rowCount"] = GetRowCount(request.Values)
+            });
             return new TableMutationResult(true, workbookPath, request.TableName, "replace_rows", RowCount: GetRowCount(request.Values));
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "table_replace_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName
+            }, ex);
             return BuildTableMutationError(workbookPath, request.TableName, "replace_rows", null, null, GetRowCount(request.Values), null, null, ex);
         }
     }
@@ -423,10 +542,22 @@ public sealed class WorkbookService
             await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
             await workbook.SetTableOptionsAsync(request, cancellationToken);
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "table_options_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName,
+                ["hasHeaders"] = request.HasHeaders,
+                ["showTotals"] = request.ShowTotals
+            });
             return new TableMutationResult(true, workbookPath, request.TableName, "set_options", HasHeaders: request.HasHeaders, ShowTotals: request.ShowTotals);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "table_options_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = request.TableName
+            }, ex);
             return BuildTableMutationError(workbookPath, request.TableName, "set_options", null, null, null, request.HasHeaders, request.ShowTotals, ex);
         }
     }
@@ -460,10 +591,20 @@ public sealed class WorkbookService
             }
 
             await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "ranges_written", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["writeCount"] = appliedWrites.Count
+            });
             return new RangeWriteResult(true, workbookPath, appliedWrites.Count, appliedWrites);
         }
         catch (Exception ex)
         {
+            _logger.LogInfo(nameof(WorkbookService), "range_write_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["writeCount"] = request.Writes.Count
+            }, ex);
             return new RangeWriteResult(
                 false,
                 workbookPath,

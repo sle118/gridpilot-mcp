@@ -1,5 +1,6 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 using System.Runtime.Versioning;
 
 namespace ExcelMcp.ComAdapter.Interop;
@@ -10,27 +11,29 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
     private readonly object _application;
     private readonly bool _ownsApplication;
     private readonly SessionAttachTargetMode? _attachTargetMode;
+    private readonly IGridPilotLogger _logger;
     private bool _disposed;
 
-    private ComExcelApplicationHandle(object application, bool ownsApplication, SessionAttachTargetMode? attachTargetMode = null)
+    private ComExcelApplicationHandle(object application, bool ownsApplication, IGridPilotLogger? logger = null, SessionAttachTargetMode? attachTargetMode = null)
     {
         _application = application;
         _ownsApplication = ownsApplication;
+        _logger = logger ?? GridPilotNullLogger.Instance;
         _attachTargetMode = attachTargetMode;
     }
 
-    public static ComExcelApplicationHandle AttachToRunningInstance(SessionAttachTarget target)
+    public static ComExcelApplicationHandle AttachToRunningInstance(SessionAttachTarget target, IGridPilotLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
         return target.Mode switch
         {
-            SessionAttachTargetMode.WorkbookOwner => AttachToWorkbookOwnerInstance(target.WorkbookPath!),
-            _ => AttachToAnyRunningInstance()
+            SessionAttachTargetMode.WorkbookOwner => AttachToWorkbookOwnerInstance(target.WorkbookPath!, logger),
+            _ => AttachToAnyRunningInstance(logger)
         };
     }
 
-    public static ComExcelApplicationHandle CreateNew(bool visible = false)
+    public static ComExcelApplicationHandle CreateNew(bool visible = false, IGridPilotLogger? logger = null)
     {
         var applicationType = Type.GetTypeFromProgID("Excel.Application")
             ?? throw new InvalidOperationException("Excel.Application COM progid is not available.");
@@ -38,8 +41,12 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         var application = Activator.CreateInstance(applicationType)
             ?? throw new InvalidOperationException("Unable to create a new Excel.Application COM instance.");
 
-        var handle = new ComExcelApplicationHandle(application, ownsApplication: true);
+        var handle = new ComExcelApplicationHandle(application, ownsApplication: true, logger: logger);
         ComDispatch.SetProperty(application, "Visible", visible);
+        handle._logger.LogInfo(nameof(ComExcelApplicationHandle), "create_new_application", new Dictionary<string, object?>
+        {
+            ["visible"] = visible
+        });
         return handle;
     }
 
@@ -117,6 +124,11 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
+        _logger.LogDebug(nameof(ComExcelApplicationHandle), "open_workbook_started", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+
         var workbooks = ComDispatch.GetProperty<object>(_application, "Workbooks");
         try
         {
@@ -131,7 +143,11 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                     if (string.Equals(fullName, normalizedPath, StringComparison.OrdinalIgnoreCase))
                     {
                         keepWorkbook = true;
-                        return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(workbook, closeOnDispose: false));
+                        _logger.LogInfo(nameof(ComExcelApplicationHandle), "open_workbook_reused", new Dictionary<string, object?>
+                        {
+                            ["workbookPath"] = normalizedPath
+                        });
+                        return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(workbook, _logger, closeOnDispose: false));
                     }
                 }
                 finally
@@ -146,7 +162,11 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
             var openedWorkbook = ComDispatch.InvokeMethod(workbooks, "Open", path)
                 ?? throw new InvalidOperationException($"Excel did not return a workbook for '{path}'.");
 
-            return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(openedWorkbook));
+            _logger.LogInfo(nameof(ComExcelApplicationHandle), "open_workbook_opened", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = normalizedPath
+            });
+            return Task.FromResult<IWorkbookHandle>(new ComWorkbookHandle(openedWorkbook, _logger));
         }
         finally
         {
@@ -176,6 +196,10 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                     ComDispatch.ReleaseIfComObject(workbook);
                 }
 
+                _logger.LogDebug(nameof(ComExcelApplicationHandle), "list_open_workbooks", new Dictionary<string, object?>
+                {
+                    ["count"] = summaries.Count
+                });
                 return Task.FromResult<IReadOnlyList<WorkbookSummary>>(summaries);
             }
             finally
@@ -200,6 +224,10 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         }
 
         ComDispatch.InvokeMethod(_application, "CalculateUntilAsyncQueriesDone");
+        _logger.LogTrace(nameof(ComExcelApplicationHandle), "wait_for_async_queries", new Dictionary<string, object?>
+        {
+            ["timeoutMs"] = timeout.TotalMilliseconds
+        });
         return Task.CompletedTask;
     }
 
@@ -222,6 +250,12 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         {
             ComDispatch.ReleaseIfComObject(_application);
         }
+
+        _logger.LogInfo(nameof(ComExcelApplicationHandle), "application_disposed", new Dictionary<string, object?>
+        {
+            ["ownsApplication"] = _ownsApplication,
+            ["attachTargetMode"] = _attachTargetMode?.ToString()
+        });
 
         return ValueTask.CompletedTask;
     }
@@ -262,7 +296,7 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         };
     }
 
-    private static ComExcelApplicationHandle AttachToAnyRunningInstance()
+    private static ComExcelApplicationHandle AttachToAnyRunningInstance(IGridPilotLogger? logger = null)
     {
         var applicationType = Type.GetTypeFromProgID("Excel.Application")
             ?? throw new InvalidOperationException("Excel.Application COM progid is not available.");
@@ -277,7 +311,9 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                     "No running Excel instance was available for generic attachment.");
             }
 
-            return new ComExcelApplicationHandle(application, ownsApplication: false, attachTargetMode: SessionAttachTargetMode.AnyRunningInstance);
+            var handle = new ComExcelApplicationHandle(application, ownsApplication: false, logger: logger, attachTargetMode: SessionAttachTargetMode.AnyRunningInstance);
+            handle._logger.LogInfo(nameof(ComExcelApplicationHandle), "attach_any_running_instance");
+            return handle;
         }
         catch (ExcelSessionTargetException)
         {
@@ -293,9 +329,9 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
         }
     }
 
-    private static ComExcelApplicationHandle AttachToWorkbookOwnerInstance(string workbookPath)
+    private static ComExcelApplicationHandle AttachToWorkbookOwnerInstance(string workbookPath, IGridPilotLogger? logger = null)
     {
-        var candidates = RunningWorkbookObjectTable.FindWorkbookOwnerApplications(workbookPath);
+        var candidates = RunningWorkbookObjectTable.FindWorkbookOwnerApplications(workbookPath, logger);
         if (candidates.Count == 0)
         {
             throw new ExcelSessionTargetException(
@@ -317,14 +353,19 @@ internal sealed class ComExcelApplicationHandle : IExcelApplicationHandle
                 "Close duplicate workbook instances or choose a less ambiguous attachment mode.");
         }
 
-        return new ComExcelApplicationHandle(candidates[0], ownsApplication: false, attachTargetMode: SessionAttachTargetMode.WorkbookOwner);
+        var handle = new ComExcelApplicationHandle(candidates[0], ownsApplication: false, logger: logger, attachTargetMode: SessionAttachTargetMode.WorkbookOwner);
+        handle._logger.LogInfo(nameof(ComExcelApplicationHandle), "attach_workbook_owner_instance", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = NormalizePath(workbookPath)
+        });
+        return handle;
     }
 
-    private static string NormalizePath(string path)
+    internal static string NormalizePath(string path)
     {
         try
         {
-            return Path.GetFullPath(path);
+            return RunningWorkbookObjectTable.NormalizePath(path);
         }
         catch (Exception)
         {

@@ -1,10 +1,12 @@
 using ExcelMcp.Bridge.Services;
+using ExcelMcp.Core.Logging;
 using ExcelMcp.ToolHost.Mcp;
 
 namespace ExcelMcp.ToolHost;
 
 public static class Program
 {
+    [STAThread]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static async Task<int> Main(string[] args)
     {
@@ -19,17 +21,27 @@ public static class Program
             return 2;
         }
 
-        Console.Error.WriteLine(options.ToStartupSummary());
-
         try
         {
-            await using var workbookServices = await WorkbookServiceResolver.CreateAsync(options);
+            await using var logger = CreateLogger(options);
+            logger.LogInfo(nameof(Program), "host_starting", new Dictionary<string, object?>
+            {
+                ["sessionMode"] = options.SessionMode.ToString(),
+                ["attachTarget"] = options.AttachTarget.ToString(),
+                ["visible"] = options.Visible,
+                ["logLevel"] = options.LogLevel.ToString().ToLowerInvariant(),
+                ["logPath"] = options.LogPath
+            });
+
+            await using var workbookServices = await WorkbookServiceResolver.CreateAsync(options, logger);
             var server = new StdioMcpServer(
-                new McpToolServer(workbookServices),
+                new McpToolServer(workbookServices, logger),
                 Console.OpenStandardInput(),
-                Console.OpenStandardOutput());
+                Console.OpenStandardOutput(),
+                logger);
 
             await server.RunAsync();
+            logger.LogInfo(nameof(Program), "host_stopped");
             return 0;
         }
         catch (Exception ex)
@@ -38,4 +50,7 @@ public static class Program
             return 3;
         }
     }
+
+    private static IGridPilotLogger CreateLogger(HostOptions options) =>
+        GridPilotLoggerFactory.Create(options.LogLevel, options.LogPath);
 }

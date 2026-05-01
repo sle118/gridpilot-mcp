@@ -550,6 +550,27 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task RefreshQueryAsync_AllowsAttachedMutationWithUrlStyleWorkbookApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        approvalRegistry.Grant("https://d.docs.live.net/171321e0a36cf836/Documents/Book_mcp_test.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, approvalRegistry));
+
+        var result = await sut.RefreshQueryAsync("https://d.docs.live.net/171321e0a36cf836/Documents/Book_mcp_test.xlsx", "SalesQuery", new RefreshOptions(Silent: true));
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Error);
+        Assert.Single(fakeWorkbook.RefreshCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
     public async Task RefreshQueryAsync_ReturnsExpiredApprovalError()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -744,6 +765,38 @@ public sealed class WorkbookServiceTests
         Assert.True(result.Succeeded);
         Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task AttachedWorkbookApprovalLease_AllowsMultipleMutationFamiliesForSameWorkbook()
+    {
+        var workbookPath = "https://d.docs.live.net/171321e0a36cf836/Documents/Book_mcp_test.xlsx";
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }))
+        };
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var registry = new InMemoryAttachedMutationApprovalRegistry();
+        registry.Grant(workbookPath, TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, registry));
+
+        var refreshResult = await sut.RefreshQueryAsync(workbookPath, "SalesQuery", new RefreshOptions(Silent: true));
+        var formulaResult = await sut.SetQueryFormulaAsync(workbookPath, "SalesQuery", "let Source = 1 in Source");
+        var writeResult = await sut.WriteRangesAsync(
+            workbookPath,
+            new RangeWriteRequest([new RangeWriteTarget("Sheet1", "A1", new object?[,] { { "A" } })]));
+
+        Assert.True(refreshResult.Succeeded);
+        Assert.True(formulaResult.Succeeded);
+        Assert.True(writeResult.Succeeded);
+        Assert.Single(fakeWorkbook.RefreshCalls);
+        Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
+        Assert.Single(fakeWorkbook.WriteRangeCalls);
+        Assert.Equal(3, fakeWorkbook.SaveCallCount);
     }
 
     [Fact]

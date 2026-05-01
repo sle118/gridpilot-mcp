@@ -30,6 +30,10 @@ Allow a first controlled set of attached-session mutations by introducing workbo
 - the first allowed attached mutation surface is limited to refresh, probe, and temp-query cleanup
 - broader workbook editing remains downstream of stronger unsafe-state detection and coordination design
 
+## Later follow-up
+- the workbook-scoped lease model remained the right UX as the workbook surface widened: one active lease now covers the currently exposed attached mutating tools for that workbook, rather than requiring approval to be reasoned about per operation family
+- a later live regression in attached `query_refresh` came from `WorkbookOperationSafety` normalizing workbook identity differently from the approval registry; that was later corrected by moving the safety seam onto the shared workbook-identity normalizer
+
 ## Tests
 - `dotnet test tests/ExcelMcp.UnitTests/ExcelMcp.UnitTests.csproj`
 - `dotnet test tests/ExcelMcp.IntegrationTests/ExcelMcp.IntegrationTests.csproj`

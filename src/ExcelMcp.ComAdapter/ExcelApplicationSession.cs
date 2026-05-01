@@ -2,6 +2,7 @@ using ExcelMcp.Bridge.Services;
 using ExcelMcp.ComAdapter.Interop;
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 
 namespace ExcelMcp.ComAdapter;
 
@@ -9,20 +10,22 @@ public sealed class ExcelApplicationSession : IExcelSession
 {
     private readonly IExcelApplicationHandle _application;
     private readonly SessionScopeManager _scopeManager;
+    private readonly IGridPilotLogger _logger;
 
-    public ExcelApplicationSession(IExcelApplicationHandle application)
+    public ExcelApplicationSession(IExcelApplicationHandle application, IGridPilotLogger? logger = null)
     {
         _application = application;
-        _scopeManager = new SessionScopeManager(application);
+        _logger = logger ?? GridPilotNullLogger.Instance;
+        _scopeManager = new SessionScopeManager(application, _logger);
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    public static ExcelApplicationSession AttachToRunning(SessionAttachTarget? target = null) =>
-        new(ComExcelApplicationHandle.AttachToRunningInstance(target ?? SessionAttachTarget.AnyRunningInstance));
+    public static ExcelApplicationSession AttachToRunning(SessionAttachTarget? target = null, IGridPilotLogger? logger = null) =>
+        new(ComExcelApplicationHandle.AttachToRunningInstance(target ?? SessionAttachTarget.AnyRunningInstance, logger), logger);
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    public static ExcelApplicationSession CreateNew(bool visible = false) =>
-        new(ComExcelApplicationHandle.CreateNew(visible));
+    public static ExcelApplicationSession CreateNew(bool visible = false, IGridPilotLogger? logger = null) =>
+        new(ComExcelApplicationHandle.CreateNew(visible, logger), logger);
 
     public ValueTask DisposeAsync() => _application.DisposeAsync();
 
@@ -41,8 +44,14 @@ public sealed class ExcelApplicationSession : IExcelSession
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
         _application.ListOpenWorkbooksAsync(cancellationToken);
 
-    public Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default) =>
-        _application.OpenWorkbookAsync(path, cancellationToken);
+    public Task<IWorkbookHandle> OpenWorkbookAsync(string path, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(nameof(ExcelApplicationSession), "open_workbook_requested", new Dictionary<string, object?>
+        {
+            ["workbookPath"] = path
+        });
+        return _application.OpenWorkbookAsync(path, cancellationToken);
+    }
 
     public Task<ScopedSessionToken> PushOptionsAsync(SessionOptions options, CancellationToken cancellationToken = default) =>
         _scopeManager.PushOptionsAsync(options, cancellationToken);

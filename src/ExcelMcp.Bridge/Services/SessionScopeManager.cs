@@ -1,17 +1,20 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 
 namespace ExcelMcp.Bridge.Services;
 
 public sealed class SessionScopeManager
 {
     private readonly IExcelApplicationHandle _application;
+    private readonly IGridPilotLogger _logger;
     private readonly object _gate = new();
     private readonly List<ScopeEntry> _scopes = [];
 
-    public SessionScopeManager(IExcelApplicationHandle application)
+    public SessionScopeManager(IExcelApplicationHandle application, IGridPilotLogger? logger = null)
     {
         _application = application;
+        _logger = logger ?? GridPilotNullLogger.Instance;
     }
 
     public Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default)
@@ -33,6 +36,11 @@ public sealed class SessionScopeManager
             var priorState = _application.CaptureState();
             _application.ApplyOptions(options);
             _scopes.Add(new ScopeEntry(token, priorState));
+            _logger.LogDebug(nameof(SessionScopeManager), "scope_pushed", new Dictionary<string, object?>
+            {
+                ["token"] = token.ToString(),
+                ["scopeDepth"] = _scopes.Count
+            });
             return Task.FromResult(token);
         }
     }
@@ -56,6 +64,11 @@ public sealed class SessionScopeManager
 
             _scopes.RemoveAt(_scopes.Count - 1);
             _application.RestoreState(scope.State);
+            _logger.LogDebug(nameof(SessionScopeManager), "scope_popped", new Dictionary<string, object?>
+            {
+                ["token"] = token.ToString(),
+                ["scopeDepth"] = _scopes.Count
+            });
             return Task.CompletedTask;
         }
     }

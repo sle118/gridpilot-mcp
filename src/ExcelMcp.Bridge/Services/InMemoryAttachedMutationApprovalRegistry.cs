@@ -112,7 +112,7 @@ public sealed class InMemoryAttachedMutationApprovalRegistry : IAttachedMutation
     {
         try
         {
-            return Path.GetFullPath(path);
+            return WorkbookIdentity.Normalize(path);
         }
         catch (Exception)
         {
