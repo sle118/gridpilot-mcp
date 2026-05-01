@@ -20,7 +20,15 @@ internal sealed record WorkbookConnectionInfo(
     bool IsOpenInExcel,
     string ApprovalState,
     DateTimeOffset? ApprovalExpiresAtUtc,
-    DateTimeOffset? ApprovalLastUsedAtUtc);
+    DateTimeOffset? ApprovalLastUsedAtUtc)
+{
+    public string HostSessionId { get; init; } = string.Empty;
+    public string MutationPermissionState { get; init; } = "missing";
+    public string MutationPermissionScope { get; init; } = "none";
+    public string? MutationPermissionWorkbookPath { get; init; }
+    public DateTimeOffset? MutationPermissionExpiresAtUtc { get; init; }
+    public DateTimeOffset? MutationPermissionLastUsedAtUtc { get; init; }
+}
 
 internal sealed record WorkbookConnectionRequest(string? WorkbookPath, string? WorkbookName);
 
@@ -38,7 +46,30 @@ internal sealed record WorkbookConnectionResult(
     bool IsOpenInExcel,
     string ApprovalState,
     DateTimeOffset? ApprovalExpiresAtUtc,
-    DateTimeOffset? ApprovalLastUsedAtUtc);
+    DateTimeOffset? ApprovalLastUsedAtUtc)
+{
+    public string HostSessionId { get; init; } = string.Empty;
+    public string MutationPermissionState { get; init; } = "missing";
+    public string MutationPermissionScope { get; init; } = "none";
+    public string? MutationPermissionWorkbookPath { get; init; }
+    public DateTimeOffset? MutationPermissionExpiresAtUtc { get; init; }
+    public DateTimeOffset? MutationPermissionLastUsedAtUtc { get; init; }
+}
+
+internal sealed record MutationPermissionGrantRequest(
+    string Scope,
+    string? WorkbookPath,
+    string? ConnectionId);
+
+internal sealed record MutationPermissionRevokeRequest(
+    string Scope,
+    string? WorkbookPath,
+    string? ConnectionId);
+
+internal sealed record MutationPermissionStatusRequest(
+    string Scope,
+    string? WorkbookPath,
+    string? ConnectionId);
 
 internal sealed record WorkbookDisconnectResult(
     bool Succeeded,

@@ -60,6 +60,9 @@ public sealed class McpToolServerTests
                 ToolNames.TableSetOptions,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
+                ToolNames.SessionGrantMutationPermission,
+                ToolNames.SessionRevokeMutationPermission,
+                ToolNames.SessionGetMutationPermission,
                 ToolNames.AttachedSessionGrantMutation,
                 ToolNames.AttachedSessionRevokeMutation
             },
@@ -90,6 +93,7 @@ public sealed class McpToolServerTests
 
         Assert.False(result.IsError);
         Assert.Equal("missing", result.StructuredContent.GetProperty("approvalState").GetString());
+        Assert.Equal("missing", result.StructuredContent.GetProperty("mutationPermissionState").GetString());
         Assert.Equal(JsonValueKind.Null, result.StructuredContent.GetProperty("approvalExpiresAtUtc").ValueKind);
         Assert.Equal(JsonValueKind.Null, result.StructuredContent.GetProperty("approvalLastUsedAtUtc").ValueKind);
     }
@@ -108,6 +112,7 @@ public sealed class McpToolServerTests
         Assert.Equal("create-new", result.StructuredContent.GetProperty("sessionMode").GetString());
         Assert.Equal(@"C:\temp\created.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
         Assert.Equal("not_applicable", result.StructuredContent.GetProperty("approvalState").GetString());
+        Assert.Equal("not_applicable", result.StructuredContent.GetProperty("mutationPermissionState").GetString());
     }
 
     [Fact]
@@ -715,6 +720,15 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookDisconnectResult>(_exception);
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionGrantResult>(_exception);
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionRevokeResult>(_exception);
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionStatusResult>(_exception);
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromException<AttachedMutationApprovalGrantResult>(_exception);
 
@@ -752,6 +766,15 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookDisconnectResult>(_exception);
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionGrantResult>(_exception);
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionRevokeResult>(_exception);
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionStatusResult>(_exception);
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromException<AttachedMutationApprovalGrantResult>(_exception);
 
@@ -782,6 +805,15 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             new TaskCompletionSource<WorkbookDisconnectResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<MutationPermissionGrantResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<MutationPermissionRevokeResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<MutationPermissionStatusResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             new TaskCompletionSource<AttachedMutationApprovalGrantResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
 
@@ -791,14 +823,14 @@ public sealed class McpToolServerTests
 
     private sealed class ApprovalCapableWorkbookServiceResolver : IWorkbookServiceResolver
     {
-        private readonly InMemoryAttachedMutationApprovalRegistry _registry = new(() => new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero));
-        private readonly AttachedMutationApprovalService _service;
+        private readonly InMemoryMutationPermissionRegistry _registry = new(() => new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero));
+        private readonly MutationPermissionService _service;
 
         public ApprovalCapableWorkbookServiceResolver()
         {
-            _service = new AttachedMutationApprovalService(_registry);
-            _registry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(5), out _);
-            _registry.Grant("https://d.docs.live.net/171321e0a36cf836/Documents/Book_mcp_test.xlsx", TimeSpan.FromMinutes(5), out _);
+            _service = new MutationPermissionService(_registry, "host-1");
+            _registry.GrantWorkbook(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(5), out _);
+            _registry.GrantWorkbook("https://d.docs.live.net/171321e0a36cf836/Documents/Book_mcp_test.xlsx", TimeSpan.FromMinutes(5), out _);
         }
 
         public Task<T> ExecuteAsync<T>(WorkbookTarget target, Func<ResolvedWorkbookContext, Task<T>> action, CancellationToken cancellationToken = default) =>
@@ -822,11 +854,28 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookDisconnectResult>(new InvalidOperationException("not used"));
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.GrantSessionAsync(ttl, cancellationToken)
+                : _service.GrantWorkbookAsync(request.WorkbookPath!, ttl, cancellationToken);
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.RevokeSessionAsync(cancellationToken)
+                : _service.RevokeWorkbookAsync(request.WorkbookPath!, cancellationToken);
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.GetSessionStatusAsync(cancellationToken)
+                : _service.GetWorkbookStatusAsync(request.WorkbookPath!, cancellationToken);
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
-            _service.GrantAsync(target.WorkbookPath!, ttl, cancellationToken);
+            GrantMutationPermissionAsync(new MutationPermissionGrantRequest("workbook", target.WorkbookPath, target.ConnectionId), ttl, cancellationToken)
+                .ContinueWith(task => new AttachedMutationApprovalGrantResult(true, task.Result.WorkbookPath!, task.Result.GrantedAtUtc, task.Result.ExpiresAtUtc, task.Result.RefreshedExistingLease, task.Result.LastUsedAtUtc), cancellationToken);
 
         public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
-            _service.RevokeAsync(target.WorkbookPath!, cancellationToken);
+            RevokeMutationPermissionAsync(new MutationPermissionRevokeRequest("workbook", target.WorkbookPath, target.ConnectionId), cancellationToken)
+                .ContinueWith(task => new AttachedMutationApprovalRevokeResult(true, task.Result.WorkbookPath!, task.Result.LeaseExisted), cancellationToken);
     }
 
     private sealed class ConnectionAwareResolver : IWorkbookServiceResolver
@@ -881,7 +930,11 @@ public sealed class McpToolServerTests
                 false,
                 "not_applicable",
                 null,
-                null));
+                null)
+            {
+                MutationPermissionState = "not_applicable",
+                MutationPermissionScope = "none"
+            });
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(
@@ -895,6 +948,15 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new WorkbookDisconnectResult(true, connectionId, @"C:\temp\connected.xlsx", true));
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MutationPermissionGrantResult(true, "host-1", request.Scope, request.WorkbookPath ?? @"C:\temp\connected.xlsx", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(10), false, null));
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MutationPermissionRevokeResult(true, "host-1", request.Scope, request.WorkbookPath ?? @"C:\temp\connected.xlsx", true));
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MutationPermissionStatusResult(true, "host-1", "missing", request.Scope, request.WorkbookPath ?? @"C:\temp\connected.xlsx", null, null));
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(new AttachedMutationApprovalGrantResult(true, target.WorkbookPath ?? @"C:\temp\connected.xlsx", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(10), false, null));
 
@@ -904,13 +966,13 @@ public sealed class McpToolServerTests
 
     private sealed class ApprovalAwareConnectionResolver : IWorkbookServiceResolver
     {
-        private readonly InMemoryAttachedMutationApprovalRegistry _registry = new(() => new DateTimeOffset(2026, 5, 1, 12, 0, 0, TimeSpan.Zero));
-        private readonly AttachedMutationApprovalService _service;
+        private readonly InMemoryMutationPermissionRegistry _registry = new(() => new DateTimeOffset(2026, 5, 1, 12, 0, 0, TimeSpan.Zero));
+        private readonly MutationPermissionService _service;
         private const string WorkbookPath = @"C:\temp\connected.xlsx";
 
         public ApprovalAwareConnectionResolver()
         {
-            _service = new AttachedMutationApprovalService(_registry);
+            _service = new MutationPermissionService(_registry, "host-1");
         }
 
         public Task<T> ExecuteAsync<T>(WorkbookTarget target, Func<ResolvedWorkbookContext, Task<T>> action, CancellationToken cancellationToken = default) =>
@@ -935,7 +997,12 @@ public sealed class McpToolServerTests
                 false,
                 "not_applicable",
                 null,
-                null));
+                null)
+            {
+                HostSessionId = "host-1",
+                MutationPermissionState = "not_applicable",
+                MutationPermissionScope = "none"
+            });
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>([BuildConnectionInfo("conn-1")]);
@@ -946,11 +1013,28 @@ public sealed class McpToolServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new WorkbookDisconnectResult(true, connectionId, WorkbookPath, true));
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.GrantSessionAsync(ttl, cancellationToken)
+                : _service.GrantWorkbookAsync(request.WorkbookPath ?? WorkbookPath, ttl, cancellationToken);
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.RevokeSessionAsync(cancellationToken)
+                : _service.RevokeWorkbookAsync(request.WorkbookPath ?? WorkbookPath, cancellationToken);
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            string.Equals(request.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                ? _service.GetSessionStatusAsync(cancellationToken)
+                : _service.GetWorkbookStatusAsync(request.WorkbookPath ?? WorkbookPath, cancellationToken);
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
-            _service.GrantAsync(target.WorkbookPath ?? WorkbookPath, ttl, cancellationToken);
+            GrantMutationPermissionAsync(new MutationPermissionGrantRequest("workbook", target.WorkbookPath ?? WorkbookPath, target.ConnectionId), ttl, cancellationToken)
+                .ContinueWith(task => new AttachedMutationApprovalGrantResult(true, task.Result.WorkbookPath!, task.Result.GrantedAtUtc, task.Result.ExpiresAtUtc, task.Result.RefreshedExistingLease, task.Result.LastUsedAtUtc), cancellationToken);
 
         public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
-            _service.RevokeAsync(target.WorkbookPath ?? WorkbookPath, cancellationToken);
+            RevokeMutationPermissionAsync(new MutationPermissionRevokeRequest("workbook", target.WorkbookPath ?? WorkbookPath, target.ConnectionId), cancellationToken)
+                .ContinueWith(task => new AttachedMutationApprovalRevokeResult(true, task.Result.WorkbookPath!, task.Result.LeaseExisted), cancellationToken);
 
         private WorkbookConnectionInfo BuildConnectionInfo(string connectionId)
         {
@@ -965,12 +1049,25 @@ public sealed class McpToolServerTests
                 true,
                 approval.State switch
                 {
-                    AttachedMutationApprovalState.Active => "active",
-                    AttachedMutationApprovalState.Expired => "expired",
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
                     _ => "missing"
                 },
                 approval.Lease?.ExpiresAtUtc,
-                approval.Lease?.LastUsedAtUtc);
+                approval.Lease?.LastUsedAtUtc)
+            {
+                HostSessionId = "host-1",
+                MutationPermissionState = approval.State switch
+                {
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
+                    _ => "missing"
+                },
+                MutationPermissionScope = approval.Scope == MutationPermissionScope.Session ? "session" : approval.Scope == MutationPermissionScope.Workbook ? "workbook" : "none",
+                MutationPermissionWorkbookPath = approval.Lease?.WorkbookPath,
+                MutationPermissionExpiresAtUtc = approval.Lease?.ExpiresAtUtc,
+                MutationPermissionLastUsedAtUtc = approval.Lease?.LastUsedAtUtc
+            };
         }
 
         private WorkbookConnectionResult BuildConnectResult(string workbookPath)
@@ -988,12 +1085,25 @@ public sealed class McpToolServerTests
                 true,
                 approval.State switch
                 {
-                    AttachedMutationApprovalState.Active => "active",
-                    AttachedMutationApprovalState.Expired => "expired",
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
                     _ => "missing"
                 },
                 approval.Lease?.ExpiresAtUtc,
-                approval.Lease?.LastUsedAtUtc);
+                approval.Lease?.LastUsedAtUtc)
+            {
+                HostSessionId = "host-1",
+                MutationPermissionState = approval.State switch
+                {
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
+                    _ => "missing"
+                },
+                MutationPermissionScope = approval.Scope == MutationPermissionScope.Session ? "session" : approval.Scope == MutationPermissionScope.Workbook ? "workbook" : "none",
+                MutationPermissionWorkbookPath = approval.Lease?.WorkbookPath,
+                MutationPermissionExpiresAtUtc = approval.Lease?.ExpiresAtUtc,
+                MutationPermissionLastUsedAtUtc = approval.Lease?.LastUsedAtUtc
+            };
         }
     }
 }

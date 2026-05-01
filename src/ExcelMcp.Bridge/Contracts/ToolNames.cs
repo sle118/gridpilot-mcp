@@ -29,6 +29,9 @@ public static class ToolNames
     public const string TableSetOptions = "table_set_options";
     public const string RangeRead = "range_read";
     public const string RangeWrite = "range_write";
+    public const string SessionGrantMutationPermission = "session_grant_mutation_permission";
+    public const string SessionRevokeMutationPermission = "session_revoke_mutation_permission";
+    public const string SessionGetMutationPermission = "session_get_mutation_permission";
     public const string AttachedSessionGrantMutation = "attached_session_grant_mutation";
     public const string AttachedSessionRevokeMutation = "attached_session_revoke_mutation";
 }

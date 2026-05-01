@@ -272,13 +272,56 @@ public sealed class McpToolServer
                     }
                 }))),
         new(
+            ToolNames.SessionGrantMutationPermission,
+            "Grant workbook-scoped or session-scoped mutation permission for the current GridPilot host session.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    scope = new { type = "string" },
+                    workbookPath = new { type = "string" },
+                    connectionId = new { type = "string" },
+                    ttlMinutes = new { type = "integer" }
+                },
+                required = new[] { "scope" }
+            })),
+        new(
+            ToolNames.SessionRevokeMutationPermission,
+            "Revoke workbook-scoped or session-scoped mutation permission for the current GridPilot host session.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    scope = new { type = "string" },
+                    workbookPath = new { type = "string" },
+                    connectionId = new { type = "string" }
+                },
+                required = new[] { "scope" }
+            })),
+        new(
+            ToolNames.SessionGetMutationPermission,
+            "Get effective workbook-scoped or session-scoped mutation permission for the current GridPilot host session.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    scope = new { type = "string" },
+                    workbookPath = new { type = "string" },
+                    connectionId = new { type = "string" }
+                },
+                required = new[] { "scope" }
+            })),
+        new(
             ToolNames.AttachedSessionGrantMutation,
-            "Grant a workbook-scoped attached-session mutation approval lease.",
+            "Deprecated compatibility shim: grant workbook-scoped mutation permission.",
             BuildTargetSchema(
                 ("ttlMinutes", new { type = "integer" }))),
         new(
             ToolNames.AttachedSessionRevokeMutation,
-            "Revoke a workbook-scoped attached-session mutation approval lease.",
+            "Deprecated compatibility shim: revoke workbook-scoped mutation permission.",
             BuildTargetSchema())
     ];
     }
@@ -410,6 +453,9 @@ public sealed class McpToolServer
             ToolNames.TableSetOptions => HandleTableSetOptionsAsync(arguments, cancellationToken),
             ToolNames.RangeRead => HandleRangeReadAsync(arguments, cancellationToken),
             ToolNames.RangeWrite => HandleRangeWriteAsync(arguments, cancellationToken),
+            ToolNames.SessionGrantMutationPermission => HandleGrantMutationPermissionAsync(arguments, cancellationToken),
+            ToolNames.SessionRevokeMutationPermission => HandleRevokeMutationPermissionAsync(arguments, cancellationToken),
+            ToolNames.SessionGetMutationPermission => HandleGetMutationPermissionAsync(arguments, cancellationToken),
             ToolNames.AttachedSessionGrantMutation => HandleGrantApprovalAsync(arguments, cancellationToken),
             ToolNames.AttachedSessionRevokeMutation => HandleRevokeApprovalAsync(arguments, cancellationToken),
             _ => Task.FromException<object>(new McpToolInputException("invalid_tool", $"Unknown tool '{name}'."))
@@ -702,6 +748,36 @@ public sealed class McpToolServer
         return ExecuteAsObjectAsync(_workbookServices.GrantAttachedMutationApprovalAsync(target, ttl, cancellationToken));
     }
 
+    private Task<object> HandleGrantMutationPermissionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var ttl = GetOptionalInt32(arguments, "ttlMinutes") is int ttlMinutes
+            ? TimeSpan.FromMinutes(ttlMinutes)
+            : (TimeSpan?)null;
+        var request = new MutationPermissionGrantRequest(
+            Scope: GetRequiredString(arguments, "scope"),
+            WorkbookPath: GetOptionalString(arguments, "workbookPath"),
+            ConnectionId: GetOptionalString(arguments, "connectionId"));
+        return ExecuteAsObjectAsync(_workbookServices.GrantMutationPermissionAsync(request, ttl, cancellationToken));
+    }
+
+    private Task<object> HandleRevokeMutationPermissionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var request = new MutationPermissionRevokeRequest(
+            Scope: GetRequiredString(arguments, "scope"),
+            WorkbookPath: GetOptionalString(arguments, "workbookPath"),
+            ConnectionId: GetOptionalString(arguments, "connectionId"));
+        return ExecuteAsObjectAsync(_workbookServices.RevokeMutationPermissionAsync(request, cancellationToken));
+    }
+
+    private Task<object> HandleGetMutationPermissionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var request = new MutationPermissionStatusRequest(
+            Scope: GetRequiredString(arguments, "scope"),
+            WorkbookPath: GetOptionalString(arguments, "workbookPath"),
+            ConnectionId: GetOptionalString(arguments, "connectionId"));
+        return ExecuteAsObjectAsync(_workbookServices.GetMutationPermissionStatusAsync(request, cancellationToken));
+    }
+
     private Task<object> HandleRevokeApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -966,6 +1042,21 @@ public sealed class McpToolServer
 
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new WorkbookDisconnectResult(true, connectionId, string.Empty, false));
+
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionGrantResult>(new WorkbookTargetResolutionException(
+                "connection_not_supported",
+                "Mutation permission is not available on a shared workbook service resolver."));
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionRevokeResult>(new WorkbookTargetResolutionException(
+                "connection_not_supported",
+                "Mutation permission is not available on a shared workbook service resolver."));
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionStatusResult>(new WorkbookTargetResolutionException(
+                "connection_not_supported",
+                "Mutation permission is not available on a shared workbook service resolver."));
 
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromException<AttachedMutationApprovalGrantResult>(new AttachedMutationApprovalModeException(

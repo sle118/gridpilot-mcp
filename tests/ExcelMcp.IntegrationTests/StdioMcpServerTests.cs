@@ -125,6 +125,15 @@ public sealed class StdioMcpServerTests
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 

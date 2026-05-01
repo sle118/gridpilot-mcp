@@ -23,7 +23,7 @@ The preferred attached behavior is `workbook-owner`, because it keeps connected 
 The current policy is deliberately conservative:
 
 - read-only operations are allowed in either connection mode
-- mutating operations in attached mode require an explicit workbook-scoped approval lease
+- mutating operations require an explicit mutation permission lease
 - the bridge does not silently attach to an already-open user workbook and mutate it
 - workbook-aware attached acquisition refuses to guess when zero or multiple candidate running instances match the requested workbook path or visible workbook title
 
@@ -59,7 +59,7 @@ The bridge enforces safety before opening the workbook for a mutating action:
 1. classify the operation intent
 2. inspect session diagnostics such as session mode, readiness, interactivity, calculation state, and current unsafe attached-session heuristics
 3. require workbook-owner attachment for attached-session mutation
-4. require a valid approval lease for the exact workbook path when attached-session mutation is requested
+4. require a valid mutation permission lease, either workbook-scoped for the exact workbook path or session-scoped for the current host session
 5. return a structured refusal reason when the action should be blocked
 
 This keeps COM-specific workbook discovery inside the adapter and keeps policy decisions in the bridge.
@@ -82,13 +82,13 @@ When the bridge borrows a workbook that is already open inside an attached Excel
 - disposing the borrowed handle does not close the user-owned workbook
 - mutating operations may proceed only when the attached session is workbook-owner targeted, the session diagnostics are safe, and a valid approval lease exists for that workbook
 
-Approval leases are currently:
+Mutation permission leases are currently:
 
 - in-memory and host-local
-- scoped to one normalized workbook path
+- either workbook-scoped for one normalized workbook path or session-scoped for any workbook in the current host session
 - explicitly granted and revoked through MCP tools
-- broad across the workbook's attached mutating surface, so one active lease covers later attached mutating tools for that same workbook until expiry or revoke
-- observable on the connection surface so clients can see whether an attached workbook currently has an active lease, instead of re-requesting approval blindly
+- broad across the workbook's mutating surface, so one active lease covers later mutating tools for that scope until expiry or revoke
+- observable on the connection surface so clients can see whether a connected workbook is currently covered by an active permission
 - automatically expired after a configurable TTL, with a default of 10 minutes
 
 Connected-workbook identity is still the normalized workbook path internally, even when an agent connects by visible workbook title and then uses `connectionId` for later calls.

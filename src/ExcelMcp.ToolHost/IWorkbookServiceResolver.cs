@@ -27,6 +27,19 @@ internal interface IWorkbookServiceResolver
 
     Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default);
 
+    Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(
+        MutationPermissionGrantRequest request,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(
+        MutationPermissionRevokeRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(
+        MutationPermissionStatusRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(
         WorkbookTarget target,
         TimeSpan? ttl = null,

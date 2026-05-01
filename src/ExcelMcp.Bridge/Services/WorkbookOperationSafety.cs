@@ -8,13 +8,13 @@ namespace ExcelMcp.Bridge.Services;
 public sealed class WorkbookOperationSafety
 {
     private readonly IExcelSession _session;
-    private readonly IAttachedMutationApprovalRegistry? _approvalRegistry;
+    private readonly IMutationPermissionRegistry? _permissionRegistry;
     private readonly IGridPilotLogger _logger;
 
-    public WorkbookOperationSafety(IExcelSession session, IAttachedMutationApprovalRegistry? approvalRegistry = null, IGridPilotLogger? logger = null)
+    public WorkbookOperationSafety(IExcelSession session, IMutationPermissionRegistry? permissionRegistry = null, IGridPilotLogger? logger = null)
     {
         _session = session;
-        _approvalRegistry = approvalRegistry;
+        _permissionRegistry = permissionRegistry;
         _logger = logger ?? GridPilotNullLogger.Instance;
     }
 
@@ -30,6 +30,7 @@ public sealed class WorkbookOperationSafety
 
         var diagnostics = await _session.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
         var normalizedTarget = NormalizePath(workbookPath);
+        var isAttachedSession = diagnostics.SessionMode == ExcelSessionMode.AttachToRunning;
         _logger.LogTrace(nameof(WorkbookOperationSafety), "check_started", new Dictionary<string, object?>
         {
             ["workbookPath"] = normalizedTarget,
@@ -40,7 +41,7 @@ public sealed class WorkbookOperationSafety
             ["isInteractive"] = diagnostics.IsInteractive,
             ["calculationState"] = diagnostics.CalculationState.ToString()
         });
-        if (diagnostics.SessionMode == ExcelSessionMode.AttachToRunning)
+        if (isAttachedSession)
         {
             if (diagnostics.AttachTargetMode is not SessionAttachTargetMode.WorkbookOwner)
             {
@@ -98,63 +99,83 @@ public sealed class WorkbookOperationSafety
                 intent: intent);
         }
 
-        if (diagnostics.SessionMode == ExcelSessionMode.AttachToRunning)
+        if (isAttachedSession)
         {
-            if (_approvalRegistry is null)
+            if (_permissionRegistry is null)
             {
                 return LogAndReturn(
                     Code: "shared_session_approval_required",
                     Message: $"Operation '{GetOperationLabel(intent)}' requires attached-session mutation approval.",
-                    Detail: "Grant a workbook-scoped attached-session mutation approval lease before running mutating tools against a live attached workbook.",
+                    Detail: "Grant workbook-scoped or session-scoped mutation permission before running mutating tools against a live attached workbook.",
                     Source: nameof(WorkbookOperationSafety),
                     workbookPath: normalizedTarget,
                     intent: intent);
             }
-
-            var approval = _approvalRegistry.Lookup(normalizedTarget);
-            switch (approval.State)
-            {
-                case AttachedMutationApprovalState.Active:
-                    _approvalRegistry.Touch(normalizedTarget);
-                    _logger.LogDebug(nameof(WorkbookOperationSafety), "approval_active", new Dictionary<string, object?>
-                    {
-                        ["workbookPath"] = normalizedTarget,
-                        ["intent"] = GetOperationLabel(intent)
-                    });
-                    return null;
-                case AttachedMutationApprovalState.Expired:
-                    return LogAndReturn(
-                        Code: "shared_session_approval_expired",
-                        Message: $"Operation '{GetOperationLabel(intent)}' is blocked because the attached-session mutation approval has expired.",
-                        Detail: $"The workbook-scoped approval lease for '{normalizedTarget}' expired at {approval.Lease!.ExpiresAtUtc:O}.",
-                        Source: nameof(WorkbookOperationSafety),
-                        workbookPath: normalizedTarget,
-                        intent: intent);
-                case AttachedMutationApprovalState.ScopeMismatch:
-                    return LogAndReturn(
-                        Code: "shared_session_approval_scope_mismatch",
-                        Message: $"Operation '{GetOperationLabel(intent)}' is blocked because approval exists for a different workbook.",
-                        Detail: "Grant mutation approval for the exact workbook path being targeted by this operation.",
-                        Source: nameof(WorkbookOperationSafety),
-                        workbookPath: normalizedTarget,
-                        intent: intent);
-                default:
-                    return LogAndReturn(
-                        Code: "shared_session_approval_required",
-                        Message: $"Operation '{GetOperationLabel(intent)}' requires attached-session mutation approval.",
-                        Detail: "Grant a workbook-scoped attached-session mutation approval lease before running mutating tools against a live attached workbook.",
-                        Source: nameof(WorkbookOperationSafety),
-                        workbookPath: normalizedTarget,
-                        intent: intent);
-            }
         }
 
-        _logger.LogDebug(nameof(WorkbookOperationSafety), "check_allowed", new Dictionary<string, object?>
+        if (_permissionRegistry is null)
         {
-            ["workbookPath"] = normalizedTarget,
-            ["intent"] = GetOperationLabel(intent)
-        });
-        return null;
+            _logger.LogDebug(nameof(WorkbookOperationSafety), "check_allowed_without_permission_registry", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = normalizedTarget,
+                ["intent"] = GetOperationLabel(intent)
+            });
+            return null;
+        }
+
+        var permission = _permissionRegistry.Lookup(normalizedTarget);
+        switch (permission.State)
+        {
+            case MutationPermissionState.Active:
+                if (permission.Scope == MutationPermissionScope.Session)
+                {
+                    _permissionRegistry.TouchSession();
+                }
+                else
+                {
+                    _permissionRegistry.TouchWorkbook(normalizedTarget);
+                }
+
+                _logger.LogDebug(nameof(WorkbookOperationSafety), "permission_active", new Dictionary<string, object?>
+                {
+                    ["workbookPath"] = normalizedTarget,
+                    ["intent"] = GetOperationLabel(intent),
+                    ["scope"] = permission.Scope.ToString()
+                });
+                return null;
+            case MutationPermissionState.Expired:
+                return LogAndReturn(
+                    Code: isAttachedSession ? "shared_session_approval_expired" : "mutation_permission_expired",
+                    Message: isAttachedSession
+                        ? $"Operation '{GetOperationLabel(intent)}' is blocked because the attached-session mutation approval has expired."
+                        : $"Operation '{GetOperationLabel(intent)}' is blocked because the mutation permission has expired.",
+                    Detail: permission.Scope == MutationPermissionScope.Session
+                        ? $"The session-wide mutation permission expired at {permission.Lease!.ExpiresAtUtc:O}."
+                        : $"The workbook-scoped mutation permission for '{normalizedTarget}' expired at {permission.Lease!.ExpiresAtUtc:O}.",
+                    Source: nameof(WorkbookOperationSafety),
+                    workbookPath: normalizedTarget,
+                    intent: intent);
+            case MutationPermissionState.ScopeMismatch:
+                return LogAndReturn(
+                    Code: isAttachedSession ? "shared_session_approval_scope_mismatch" : "mutation_permission_scope_mismatch",
+                    Message: $"Operation '{GetOperationLabel(intent)}' is blocked because permission exists for a different workbook.",
+                    Detail: "Grant mutation permission for the exact workbook path being targeted, or grant session-scoped mutation permission.",
+                    Source: nameof(WorkbookOperationSafety),
+                    workbookPath: normalizedTarget,
+                    intent: intent);
+            default:
+                return LogAndReturn(
+                    Code: isAttachedSession ? "shared_session_approval_required" : "mutation_permission_required",
+                    Message: isAttachedSession
+                        ? $"Operation '{GetOperationLabel(intent)}' requires attached-session mutation approval."
+                        : $"Operation '{GetOperationLabel(intent)}' requires mutation permission.",
+                    Detail: isAttachedSession
+                        ? "Grant workbook-scoped or session-scoped mutation permission before running mutating tools against a live attached workbook."
+                        : "Grant workbook-scoped or session-scoped mutation permission before running mutating tools.",
+                    Source: nameof(WorkbookOperationSafety),
+                    workbookPath: normalizedTarget,
+                    intent: intent);
+        }
     }
 
     private OperationError LogAndReturn(
