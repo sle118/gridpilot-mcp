@@ -309,4 +309,55 @@ public sealed class LiveAttachedSessionSafetyTests
         Assert.Equal(3, read.Rows.Count);
         Assert.True(read.HasTotalsRow);
     }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_WorksheetAndTableDelete_FailBeforeApproval_AndSucceedAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        const string sheetName = "GridPilotAttachedDeleteSheet";
+        const string tableName = "GridPilotAttachedDeleteTable";
+
+        await context.GrantApprovalAsync();
+
+        Assert.True((await context.WorkbookService.CreateWorksheetAsync(context.WorkbookPath, sheetName)).Succeeded);
+
+        Assert.True((await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, "A1:B3", new object?[,]
+                {
+                    { "Name", "Value" },
+                    { "One", 1d },
+                    { "Two", 2d }
+                })
+            ]))).Succeeded);
+
+        Assert.True((await context.WorkbookService.CreateTableAsync(
+            context.WorkbookPath,
+            new TableCreateRequest(tableName, sheetName, "A1:B3"))).Succeeded);
+
+        await context.RevokeApprovalAsync();
+
+        var blockedDeleteTable = await context.WorkbookService.DeleteTableAsync(context.WorkbookPath, tableName);
+        Assert.False(blockedDeleteTable.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedDeleteTable.Error?.Code);
+
+        var blockedDeleteWorksheet = await context.WorkbookService.DeleteWorksheetAsync(context.WorkbookPath, sheetName);
+        Assert.False(blockedDeleteWorksheet.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedDeleteWorksheet.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var deletedTable = await context.WorkbookService.DeleteTableAsync(context.WorkbookPath, tableName);
+        Assert.True(deletedTable.Succeeded);
+        Assert.Equal(sheetName, deletedTable.SheetName);
+
+        var deletedWorksheet = await context.WorkbookService.DeleteWorksheetAsync(context.WorkbookPath, sheetName);
+        Assert.True(deletedWorksheet.Succeeded);
+
+        var inventory = await context.WorkbookService.ListInventoryAsync(context.WorkbookPath);
+        Assert.DoesNotContain(inventory.Sheets, sheet => string.Equals(sheet.Name, sheetName, StringComparison.Ordinal));
+        Assert.DoesNotContain(inventory.Tables, table => string.Equals(table.TableName, tableName, StringComparison.OrdinalIgnoreCase));
+    }
 }

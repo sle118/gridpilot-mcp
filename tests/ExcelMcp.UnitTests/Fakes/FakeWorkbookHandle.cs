@@ -1,14 +1,16 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Results;
+using System.IO;
 
 namespace ExcelMcp.UnitTests.Fakes;
 
 internal sealed class FakeWorkbookHandle : IWorkbookHandle
 {
-    public string Name => "fake.xlsx";
-    public string FullPath => @"C:\temp\fake.xlsx";
+    public string Name => Path.GetFileName(FullPath);
+    public string FullPath { get; private set; } = @"C:\temp\fake.xlsx";
     public int SaveCallCount { get; private set; }
+    public int SaveAsCallCount { get; private set; }
     public List<(string QueryName, RefreshOptions? Options)> RefreshCalls { get; } = [];
     public List<(string QueryName, string Formula)> SetQueryFormulaCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
@@ -26,7 +28,11 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<TableResizeRequest> ResizedTables { get; } = [];
     public List<TableRowsWriteRequest> AppendedTableRows { get; } = [];
     public List<TableRowsWriteRequest> ReplacedTableRows { get; } = [];
+    public List<string> DeletedTables { get; } = [];
     public List<TableOptionsUpdateRequest> UpdatedTableOptions { get; } = [];
+    public List<string> CreatedWorksheets { get; } = [];
+    public List<(string SheetName, string NewSheetName)> RenamedWorksheets { get; } = [];
+    public List<string> DeletedWorksheets { get; } = [];
 
     public Func<string, Task<QueryDefinition>> OnGetQueryAsync { get; set; } =
         name => Task.FromResult(new QueryDefinition(name, "let Source = 1 in Source"));
@@ -76,7 +82,19 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Func<TableRowsWriteRequest, Task> OnReplaceTableRowsAsync { get; set; } =
         _ => Task.CompletedTask;
 
+    public Func<string, Task> OnDeleteTableAsync { get; set; } =
+        _ => Task.CompletedTask;
+
     public Func<TableOptionsUpdateRequest, Task> OnSetTableOptionsAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<string, Task> OnCreateWorksheetAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<string, string, Task> OnRenameWorksheetAsync { get; set; } =
+        (_, _) => Task.CompletedTask;
+
+    public Func<string, Task> OnDeleteWorksheetAsync { get; set; } =
         _ => Task.CompletedTask;
 
     public Func<string, object?[,], string?, Task> OnWriteRangeAsync { get; set; } =
@@ -86,6 +104,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Task SaveAsync(CancellationToken cancellationToken = default)
     {
         SaveCallCount++;
+        return Task.CompletedTask;
+    }
+    public Task SaveAsAsync(string path, CancellationToken cancellationToken = default)
+    {
+        SaveAsCallCount++;
+        FullPath = path;
         return Task.CompletedTask;
     }
     public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -164,10 +188,34 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return OnReplaceTableRowsAsync(request);
     }
 
+    public Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default)
+    {
+        DeletedTables.Add(tableName);
+        return OnDeleteTableAsync(tableName);
+    }
+
     public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default)
     {
         UpdatedTableOptions.Add(request);
         return OnSetTableOptionsAsync(request);
+    }
+
+    public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        CreatedWorksheets.Add(sheetName);
+        return OnCreateWorksheetAsync(sheetName);
+    }
+
+    public Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default)
+    {
+        RenamedWorksheets.Add((sheetName, newSheetName));
+        return OnRenameWorksheetAsync(sheetName, newSheetName);
+    }
+
+    public Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        DeletedWorksheets.Add(sheetName);
+        return OnDeleteWorksheetAsync(sheetName);
     }
 
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)

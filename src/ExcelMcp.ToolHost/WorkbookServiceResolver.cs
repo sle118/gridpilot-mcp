@@ -5,6 +5,7 @@ using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
+using System.Collections.Concurrent;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -21,6 +22,7 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
     private readonly IGridPilotLogger _logger;
     private readonly Dictionary<string, ConnectedWorkbookConnection> _connectionsById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _connectionIdsByPath = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionOperationGates = new(StringComparer.Ordinal);
     private IExcelSession? _defaultSharedSession;
     private WorkbookService? _defaultSharedService;
     private IExcelSession? _bridgeOwnedSession;
@@ -44,19 +46,7 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
-
-        var resolved = await ResolveTargetAsync(target, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await action(resolved).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (resolved is IAsyncDisposable disposable)
-            {
-                await disposable.DisposeAsync().ConfigureAwait(false);
-            }
-        }
+        return await ExecuteWithResolvedTargetAsync(target, action, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default)
@@ -173,6 +163,77 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         return await CreateBridgeOwnedWorkbookAsync(explicitPath, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<WorkbookSaveResult> SaveWorkbookAsync(
+        WorkbookTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        return await ExecuteWithResolvedTargetAsync(
+            target,
+            async resolved =>
+            {
+                var result = await resolved.Service.SaveWorkbookAsync(resolved.WorkbookPath, resolved.ConnectionId, cancellationToken).ConfigureAwait(false);
+
+                if (resolved.ConnectionId is not null && TryGetConnectionById(resolved.ConnectionId, out var connection))
+                {
+                    return ApplyPermissionStatus(result, GetPermissionStatus(connection!), resolved.ConnectionId, connection);
+                }
+
+                return ApplyPermissionStatus(result, GetPermissionStatus(result.WorkbookPath), resolved.ConnectionId);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<WorkbookSaveResult> SaveWorkbookAsAsync(
+        WorkbookSaveAsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var newWorkbookPath = NormalizePathOrNull(request.NewWorkbookPath);
+        if (newWorkbookPath is null)
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_path_required",
+                "Saving a workbook as a new file requires 'newWorkbookPath'.");
+        }
+
+        var parentDirectory = Path.GetDirectoryName(newWorkbookPath);
+        if (string.IsNullOrWhiteSpace(parentDirectory) || !Directory.Exists(parentDirectory))
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_directory_not_found",
+                $"The parent directory for '{newWorkbookPath}' does not exist.");
+        }
+
+        if (File.Exists(newWorkbookPath))
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_already_exists",
+                $"Workbook '{newWorkbookPath}' already exists.",
+                "Choose a new workbook path that does not already exist.");
+        }
+
+        return await ExecuteWithResolvedTargetAsync(
+            new WorkbookTarget(request.WorkbookPath, request.ConnectionId),
+            async resolved =>
+            {
+                var result = await resolved.Service.SaveWorkbookAsAsync(resolved.WorkbookPath, newWorkbookPath, resolved.ConnectionId, cancellationToken).ConfigureAwait(false);
+
+                if (result.Succeeded && resolved.ConnectionId is not null)
+                {
+                    RetargetConnection(resolved.ConnectionId, result.WorkbookPath);
+                }
+
+                if (resolved.ConnectionId is not null && TryGetConnectionById(resolved.ConnectionId, out var connection))
+                {
+                    return ApplyPermissionStatus(result, GetPermissionStatus(connection!), resolved.ConnectionId, connection);
+                }
+
+                return ApplyPermissionStatus(result, GetPermissionStatus(result.WorkbookPath), resolved.ConnectionId);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -205,6 +266,7 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
     public async Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await using var operationLease = await AcquireConnectionOperationLeaseAsync(connectionId, cancellationToken).ConfigureAwait(false);
 
         ConnectedWorkbookConnection? removed = null;
         lock (_gate)
@@ -250,8 +312,10 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
             return await _permissionService.GrantSessionAsync(ttl, cancellationToken).ConfigureAwait(false);
         }
 
-        var resolved = await ResolveTargetAsync(new WorkbookTarget(request.WorkbookPath, request.ConnectionId), cancellationToken).ConfigureAwait(false);
-        return await _permissionService.GrantWorkbookAsync(resolved.WorkbookPath, ttl, cancellationToken).ConfigureAwait(false);
+        return await ExecuteWithResolvedTargetAsync(
+            new WorkbookTarget(request.WorkbookPath, request.ConnectionId),
+            resolved => _permissionService.GrantWorkbookAsync(resolved.WorkbookPath, ttl, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(
@@ -263,8 +327,10 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
             return await _permissionService.RevokeSessionAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var resolved = await ResolveTargetAsync(new WorkbookTarget(request.WorkbookPath, request.ConnectionId), cancellationToken).ConfigureAwait(false);
-        return await _permissionService.RevokeWorkbookAsync(resolved.WorkbookPath, cancellationToken).ConfigureAwait(false);
+        return await ExecuteWithResolvedTargetAsync(
+            new WorkbookTarget(request.WorkbookPath, request.ConnectionId),
+            resolved => _permissionService.RevokeWorkbookAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(
@@ -276,8 +342,10 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
             return await _permissionService.GetSessionStatusAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var resolved = await ResolveTargetAsync(new WorkbookTarget(request.WorkbookPath, request.ConnectionId), cancellationToken).ConfigureAwait(false);
-        return await _permissionService.GetWorkbookStatusAsync(resolved.WorkbookPath, cancellationToken).ConfigureAwait(false);
+        return await ExecuteWithResolvedTargetAsync(
+            new WorkbookTarget(request.WorkbookPath, request.ConnectionId),
+            resolved => _permissionService.GetWorkbookStatusAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(
@@ -285,18 +353,28 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default)
     {
-        var resolved = await ResolveTargetAsync(target, cancellationToken).ConfigureAwait(false);
-        var result = await _permissionService.GrantWorkbookAsync(resolved.WorkbookPath, ttl, cancellationToken).ConfigureAwait(false);
-        return new AttachedMutationApprovalGrantResult(true, result.WorkbookPath!, result.GrantedAtUtc, result.ExpiresAtUtc, result.RefreshedExistingLease, result.LastUsedAtUtc, result.Error);
+        return await ExecuteWithResolvedTargetAsync(
+            target,
+            async resolved =>
+            {
+                var result = await _permissionService.GrantWorkbookAsync(resolved.WorkbookPath, ttl, cancellationToken).ConfigureAwait(false);
+                return new AttachedMutationApprovalGrantResult(true, result.WorkbookPath!, result.GrantedAtUtc, result.ExpiresAtUtc, result.RefreshedExistingLease, result.LastUsedAtUtc, result.Error);
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(
         WorkbookTarget target,
         CancellationToken cancellationToken = default)
     {
-        var resolved = await ResolveTargetAsync(target, cancellationToken).ConfigureAwait(false);
-        var result = await _permissionService.RevokeWorkbookAsync(resolved.WorkbookPath, cancellationToken).ConfigureAwait(false);
-        return new AttachedMutationApprovalRevokeResult(true, result.WorkbookPath!, result.LeaseExisted, result.Error);
+        return await ExecuteWithResolvedTargetAsync(
+            target,
+            async resolved =>
+            {
+                var result = await _permissionService.RevokeWorkbookAsync(resolved.WorkbookPath, cancellationToken).ConfigureAwait(false);
+                return new AttachedMutationApprovalRevokeResult(true, result.WorkbookPath!, result.LeaseExisted, result.Error);
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -322,6 +400,13 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         {
             await session.DisposeAsync().ConfigureAwait(false);
         }
+
+        foreach (var operationGate in _connectionOperationGates.Values)
+        {
+            operationGate.Dispose();
+        }
+
+        _connectionOperationGates.Clear();
 
         _logger.LogInfo(nameof(WorkbookServiceResolver), "resolver_disposed", new Dictionary<string, object?>
         {
@@ -484,12 +569,53 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         }
     }
 
+    private void RetargetConnection(string connectionId, string newWorkbookPath)
+    {
+        lock (_gate)
+        {
+            if (!_connectionsById.TryGetValue(connectionId, out var existing))
+            {
+                return;
+            }
+
+            _connectionIdsByPath.Remove(existing.WorkbookPath);
+            var workbookName = Path.GetFileName(newWorkbookPath);
+            var updated = existing with
+            {
+                WorkbookName = string.IsNullOrWhiteSpace(workbookName) ? existing.WorkbookName : workbookName,
+                WorkbookPath = newWorkbookPath
+            };
+            _connectionsById[connectionId] = updated;
+            _connectionIdsByPath[newWorkbookPath] = connectionId;
+            _logger.LogInfo(nameof(WorkbookServiceResolver), "connection_retargeted", new Dictionary<string, object?>
+            {
+                ["connectionId"] = connectionId,
+                ["sourceWorkbookPath"] = existing.WorkbookPath,
+                ["workbookPath"] = newWorkbookPath
+            });
+        }
+    }
+
     private bool TryGetExistingConnection(string workbookPath, out ConnectedWorkbookConnection? connection)
     {
         lock (_gate)
         {
             if (_connectionIdsByPath.TryGetValue(workbookPath, out var connectionId) &&
                 _connectionsById.TryGetValue(connectionId, out connection))
+            {
+                return true;
+            }
+        }
+
+        connection = null;
+        return false;
+    }
+
+    private bool TryGetConnectionById(string connectionId, out ConnectedWorkbookConnection? connection)
+    {
+        lock (_gate)
+        {
+            if (_connectionsById.TryGetValue(connectionId, out connection))
             {
                 return true;
             }
@@ -559,6 +685,48 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
             ["workbookPath"] = explicitPath
         });
         return new ResolvedWorkbookContext(explicitPath!, null, sharedService);
+    }
+
+    private async Task<T> ExecuteWithResolvedTargetAsync<T>(
+        WorkbookTarget target,
+        Func<ResolvedWorkbookContext, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        ConnectionOperationLease? operationLease = null;
+        if (NormalizeIdentifier(target.ConnectionId) is { } connectionId)
+        {
+            operationLease = await AcquireConnectionOperationLeaseAsync(connectionId, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var resolved = await ResolveTargetAsync(target, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await action(resolved).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (resolved is IAsyncDisposable disposable)
+                {
+                    await disposable.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            if (operationLease is not null)
+            {
+                await operationLease.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<ConnectionOperationLease> AcquireConnectionOperationLeaseAsync(string connectionId, CancellationToken cancellationToken)
+    {
+        var operationGate = _connectionOperationGates.GetOrAdd(connectionId, static _ => new SemaphoreSlim(1, 1));
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new ConnectionOperationLease(operationGate);
     }
 
     private (IExcelSession Session, WorkbookService Service) GetOrCreateDefaultSharedService()
@@ -637,8 +805,11 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         };
 
     private WorkbookPermissionStatus GetPermissionStatus(ConnectedWorkbookConnection connection)
+        => GetPermissionStatus(connection.WorkbookPath);
+
+    private WorkbookPermissionStatus GetPermissionStatus(string workbookPath)
     {
-        var lookup = _permissionRegistry.Lookup(connection.WorkbookPath);
+        var lookup = _permissionRegistry.Lookup(workbookPath);
         return lookup.State switch
         {
             MutationPermissionState.Active => new WorkbookPermissionStatus(
@@ -664,6 +835,31 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
                 lookup.Lease?.ExpiresAtUtc,
                 lookup.Lease?.LastUsedAtUtc),
             _ => new WorkbookPermissionStatus("missing", "none", null, null, null)
+        };
+    }
+
+    private WorkbookSaveResult ApplyPermissionStatus(
+        WorkbookSaveResult result,
+        WorkbookPermissionStatus permissionStatus,
+        string? connectionId,
+        ConnectedWorkbookConnection? connection = null)
+    {
+        var approvalState = connection?.ConnectionMode == "bridge_owned" ? "not_applicable" : permissionStatus.State;
+        var approvalExpiresAtUtc = connection?.ConnectionMode == "bridge_owned" ? null : permissionStatus.ExpiresAtUtc;
+        var approvalLastUsedAtUtc = connection?.ConnectionMode == "bridge_owned" ? null : permissionStatus.LastUsedAtUtc;
+
+        return result with
+        {
+            ConnectionId = connectionId ?? result.ConnectionId,
+            HostSessionId = _hostSessionId,
+            ApprovalState = approvalState,
+            ApprovalExpiresAtUtc = approvalExpiresAtUtc,
+            ApprovalLastUsedAtUtc = approvalLastUsedAtUtc,
+            MutationPermissionState = permissionStatus.State,
+            MutationPermissionScope = permissionStatus.Scope,
+            MutationPermissionWorkbookPath = permissionStatus.WorkbookPath,
+            MutationPermissionExpiresAtUtc = permissionStatus.ExpiresAtUtc,
+            MutationPermissionLastUsedAtUtc = permissionStatus.LastUsedAtUtc
         };
     }
 
@@ -742,6 +938,28 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         }
 
         public ValueTask DisposeAsync() => _session.DisposeAsync();
+    }
+
+    private sealed class ConnectionOperationLease : IAsyncDisposable
+    {
+        private readonly SemaphoreSlim _operationGate;
+        private bool _disposed;
+
+        public ConnectionOperationLease(SemaphoreSlim operationGate)
+        {
+            _operationGate = operationGate;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                _operationGate.Release();
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T> where T : class

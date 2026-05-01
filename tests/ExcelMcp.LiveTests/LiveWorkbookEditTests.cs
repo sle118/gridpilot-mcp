@@ -158,4 +158,106 @@ public sealed class LiveWorkbookEditTests
         Assert.Equal(6d, Convert.ToDouble(reread.Rows[2][1]));
         Assert.True(reread.HasTotalsRow);
     }
+
+    [LiveExcelFact]
+    public async Task PersistenceAndWorksheetLifecycle_SaveSaveAsAndDeleteTable_Persist()
+    {
+        string? savedWorkbookPath = null;
+
+        try
+        {
+            await using var context = await LiveExcelTestContext.CreateAsync();
+            const string createdSheetName = "GridPilotTempSheet";
+            const string renamedSheetName = "GridPilotRenamedSheet";
+            const string tableName = "GridPilotDeleteMe";
+
+            var saved = await context.WorkbookService.SaveWorkbookAsync(context.WorkbookPath);
+            Assert.True(saved.Succeeded);
+
+            var created = await context.WorkbookService.CreateWorksheetAsync(context.WorkbookPath, createdSheetName);
+            Assert.True(created.Succeeded);
+
+            var renamed = await context.WorkbookService.RenameWorksheetAsync(
+                context.WorkbookPath,
+                createdSheetName,
+                renamedSheetName);
+            Assert.True(renamed.Succeeded);
+
+            var write = await context.WorkbookService.WriteRangesAsync(
+                context.WorkbookPath,
+                new RangeWriteRequest(
+                [
+                    new RangeWriteTarget(renamedSheetName, "A1:B3", new object?[,]
+                    {
+                        { "Name", "Value" },
+                        { "One", 1d },
+                        { "Two", 2d }
+                    })
+                ]));
+            Assert.True(write.Succeeded);
+
+            var createdTable = await context.WorkbookService.CreateTableAsync(
+                context.WorkbookPath,
+                new TableCreateRequest(tableName, renamedSheetName, "A1:B3"));
+            Assert.True(createdTable.Succeeded);
+
+            var deletedTable = await context.WorkbookService.DeleteTableAsync(context.WorkbookPath, tableName);
+            Assert.True(deletedTable.Succeeded);
+            Assert.Equal(renamedSheetName, deletedTable.SheetName);
+
+            savedWorkbookPath = Path.Combine(
+                Path.GetDirectoryName(context.WorkbookPath)!,
+                $"saved-copy-{Guid.NewGuid():N}.xlsx");
+
+            var savedAs = await context.WorkbookService.SaveWorkbookAsAsync(context.WorkbookPath, savedWorkbookPath);
+            Assert.True(savedAs.Succeeded);
+            Assert.Equal(savedWorkbookPath, savedAs.WorkbookPath);
+
+            var savedInventory = await context.WorkbookService.ListInventoryAsync(savedWorkbookPath);
+            Assert.Contains(savedInventory.Sheets, sheet => string.Equals(sheet.Name, renamedSheetName, StringComparison.Ordinal));
+            Assert.DoesNotContain(savedInventory.Tables, table => string.Equals(table.TableName, tableName, StringComparison.OrdinalIgnoreCase));
+
+            var deletedWorksheet = await context.WorkbookService.DeleteWorksheetAsync(savedWorkbookPath, renamedSheetName);
+            Assert.True(deletedWorksheet.Succeeded);
+
+            var rereadInventory = await context.WorkbookService.ListInventoryAsync(savedWorkbookPath);
+            Assert.DoesNotContain(rereadInventory.Sheets, sheet => string.Equals(sheet.Name, renamedSheetName, StringComparison.Ordinal));
+
+            var resaved = await context.WorkbookService.SaveWorkbookAsync(savedWorkbookPath);
+            Assert.True(resaved.Succeeded);
+        }
+        finally
+        {
+            DeleteTempWorkbookWithRetry(savedWorkbookPath);
+        }
+    }
+
+    private static void DeleteTempWorkbookWithRetry(string? workbookPath)
+    {
+        if (string.IsNullOrWhiteSpace(workbookPath))
+        {
+            return;
+        }
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                if (File.Exists(workbookPath))
+                {
+                    File.Delete(workbookPath);
+                }
+
+                return;
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                Thread.Sleep(250);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 4)
+            {
+                Thread.Sleep(250);
+            }
+        }
+    }
 }

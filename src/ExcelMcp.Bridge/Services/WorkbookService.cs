@@ -195,6 +195,181 @@ public sealed class WorkbookService
         return new WorkbookInventory(sheets, tables, queries, connections);
     }
 
+    public async Task<WorkbookSaveResult> SaveWorkbookAsync(
+        string workbookPath,
+        string? connectionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorkbookSaveResult(false, workbookPath, workbookPath, "save", connectionId, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "workbook_saved", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbook.FullPath,
+                ["connectionId"] = connectionId
+            });
+            return new WorkbookSaveResult(true, workbookPath, workbook.FullPath, "save", connectionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "workbook_save_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionId"] = connectionId
+            }, ex);
+            return BuildWorkbookSaveError(workbookPath, workbookPath, "save", connectionId, ex);
+        }
+    }
+
+    public async Task<WorkbookSaveResult> SaveWorkbookAsAsync(
+        string workbookPath,
+        string newWorkbookPath,
+        string? connectionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorkbookSaveResult(false, workbookPath, newWorkbookPath, "save_as", connectionId, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SaveAsAsync(newWorkbookPath, cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "workbook_saved_as", new Dictionary<string, object?>
+            {
+                ["sourceWorkbookPath"] = workbookPath,
+                ["workbookPath"] = workbook.FullPath,
+                ["connectionId"] = connectionId
+            });
+            return new WorkbookSaveResult(true, workbookPath, workbook.FullPath, "save_as", connectionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "workbook_save_as_failed", new Dictionary<string, object?>
+            {
+                ["sourceWorkbookPath"] = workbookPath,
+                ["workbookPath"] = newWorkbookPath,
+                ["connectionId"] = connectionId
+            }, ex);
+            return BuildWorkbookSaveError(workbookPath, newWorkbookPath, "save_as", connectionId, ex);
+        }
+    }
+
+    public async Task<WorksheetMutationResult> CreateWorksheetAsync(
+        string workbookPath,
+        string sheetName,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetMutationResult(false, workbookPath, sheetName, "create", Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.CreateWorksheetAsync(sheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_created", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName
+            });
+            return new WorksheetMutationResult(true, workbookPath, sheetName, "create");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_create_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName
+            }, ex);
+            return BuildWorksheetMutationError(workbookPath, sheetName, "create", null, ex);
+        }
+    }
+
+    public async Task<WorksheetMutationResult> RenameWorksheetAsync(
+        string workbookPath,
+        string sheetName,
+        string newSheetName,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetMutationResult(false, workbookPath, sheetName, "rename", newSheetName, safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.RenameWorksheetAsync(sheetName, newSheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_renamed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName,
+                ["newSheetName"] = newSheetName
+            });
+            return new WorksheetMutationResult(true, workbookPath, sheetName, "rename", newSheetName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_rename_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName,
+                ["newSheetName"] = newSheetName
+            }, ex);
+            return BuildWorksheetMutationError(workbookPath, sheetName, "rename", newSheetName, ex);
+        }
+    }
+
+    public async Task<WorksheetMutationResult> DeleteWorksheetAsync(
+        string workbookPath,
+        string sheetName,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetMutationResult(false, workbookPath, sheetName, "delete", Error: safetyError);
+        }
+
+        try
+        {
+            await using var _ = await _session.BeginScopeAsync(QuietSessionOptions, cancellationToken);
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.DeleteWorksheetAsync(sheetName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_deleted", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName
+            });
+            return new WorksheetMutationResult(true, workbookPath, sheetName, "delete");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_delete_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName
+            }, ex);
+            return BuildWorksheetMutationError(workbookPath, sheetName, "delete", null, ex);
+        }
+    }
+
     public async Task<RefreshResult> RefreshQueryAsync(string workbookPath, string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default)
     {
         options ??= new RefreshOptions();
@@ -562,6 +737,42 @@ public sealed class WorkbookService
         }
     }
 
+    public async Task<TableMutationResult> DeleteTableAsync(
+        string workbookPath,
+        string tableName,
+        CancellationToken cancellationToken = default)
+    {
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new TableMutationResult(false, workbookPath, tableName, "delete", Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            var table = await workbook.GetTableAsync(tableName, cancellationToken);
+            await workbook.DeleteTableAsync(tableName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "table_deleted", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = tableName,
+                ["sheetName"] = table.SheetName
+            });
+            return new TableMutationResult(true, workbookPath, tableName, "delete", table.SheetName, table.Address, table.RowCount, table.HasHeaders, table.HasTotalsRow);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "table_delete_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["tableName"] = tableName
+            }, ex);
+            return BuildTableMutationError(workbookPath, tableName, "delete", null, null, null, null, null, ex);
+        }
+    }
+
     public async Task<RangeWriteResult> WriteRangesAsync(
         string workbookPath,
         RangeWriteRequest request,
@@ -704,6 +915,42 @@ public sealed class WorkbookService
             new OperationError(
                 Code: $"name_{action}_failed",
                 Message: $"Failed to {action} name '{name}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static WorksheetMutationResult BuildWorksheetMutationError(
+        string workbookPath,
+        string sheetName,
+        string action,
+        string? newSheetName,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            sheetName,
+            action,
+            newSheetName,
+            new OperationError(
+                Code: $"worksheet_{action}_failed",
+                Message: $"Failed to {action} worksheet '{sheetName}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static WorkbookSaveResult BuildWorkbookSaveError(
+        string sourceWorkbookPath,
+        string workbookPath,
+        string operation,
+        string? connectionId,
+        Exception ex) =>
+        new(
+            false,
+            sourceWorkbookPath,
+            workbookPath,
+            operation,
+            connectionId,
+            new OperationError(
+                Code: $"workbook_{operation}_failed",
+                Message: $"Failed to {operation.Replace('_', ' ')} workbook '{sourceWorkbookPath}'.",
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
 

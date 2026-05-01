@@ -29,3 +29,4 @@ Replace the attached-only workbook approval lease with a unified mutation-permis
 ## Findings
 - the repo can now express the permission scopes the client needs, but this alone does not guarantee that the Codex/MCP client will stop prompting per mutating tool call
 - maintaining the legacy attached approval aliases reduces churn for existing attached-session tests and documentation while the client-facing model broadens
+- workflow note: when the MCP host is running in the active Codex environment, local `dotnet build` / `dotnet test` should be treated as unavailable because the running host can lock executable outputs; build/test signal should come from a separate compile-run pass after the host is stopped

@@ -1,13 +1,14 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Results;
+using System.IO;
 
 namespace ExcelMcp.IntegrationTests.Fakes;
 
 internal sealed class FakeWorkbookHandle : IWorkbookHandle
 {
-    public string Name => "fake.xlsx";
-    public string FullPath => @"C:\temp\fake.xlsx";
+    public string Name => Path.GetFileName(FullPath);
+    public string FullPath { get; private set; } = @"C:\temp\fake.xlsx";
     public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
     public IReadOnlyList<QuerySummary> Queries { get; set; } = Array.Empty<QuerySummary>();
@@ -21,15 +22,26 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<TableResizeRequest> ResizedTables { get; } = [];
     public List<TableRowsWriteRequest> AppendedTableRows { get; } = [];
     public List<TableRowsWriteRequest> ReplacedTableRows { get; } = [];
+    public List<string> DeletedTables { get; } = [];
     public List<TableOptionsUpdateRequest> UpdatedTableOptions { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
+    public List<string> CreatedWorksheets { get; } = [];
+    public List<(string SheetName, string NewSheetName)> RenamedWorksheets { get; } = [];
+    public List<string> DeletedWorksheets { get; } = [];
     public int SaveCallCount { get; private set; }
+    public int SaveAsCallCount { get; private set; }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task SaveAsync(CancellationToken cancellationToken = default)
     {
         SaveCallCount++;
+        return Task.CompletedTask;
+    }
+    public Task SaveAsAsync(string path, CancellationToken cancellationToken = default)
+    {
+        SaveAsCallCount++;
+        FullPath = path;
         return Task.CompletedTask;
     }
     public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -102,9 +114,33 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return Task.CompletedTask;
     }
 
+    public Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default)
+    {
+        DeletedTables.Add(tableName);
+        return Task.CompletedTask;
+    }
+
     public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default)
     {
         UpdatedTableOptions.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        CreatedWorksheets.Add(sheetName);
+        return Task.CompletedTask;
+    }
+
+    public Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default)
+    {
+        RenamedWorksheets.Add((sheetName, newSheetName));
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        DeletedWorksheets.Add(sheetName);
         return Task.CompletedTask;
     }
 

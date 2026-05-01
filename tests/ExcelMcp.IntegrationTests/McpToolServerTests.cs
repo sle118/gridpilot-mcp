@@ -39,8 +39,13 @@ public sealed class McpToolServerTests
                 ToolNames.SessionListConnections,
                 ToolNames.SessionGetConnection,
                 ToolNames.SessionDisconnectWorkbook,
+                ToolNames.WorkbookSave,
+                ToolNames.WorkbookSaveAs,
                 ToolNames.WorkbookListInventory,
                 ToolNames.WorkbookListNames,
+                ToolNames.WorksheetCreate,
+                ToolNames.WorksheetRename,
+                ToolNames.WorksheetDelete,
                 ToolNames.QueryGet,
                 ToolNames.NameGet,
                 ToolNames.NameRead,
@@ -58,6 +63,7 @@ public sealed class McpToolServerTests
                 ToolNames.TableAppendRows,
                 ToolNames.TableReplaceRows,
                 ToolNames.TableSetOptions,
+                ToolNames.TableDelete,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
                 ToolNames.SessionGrantMutationPermission,
@@ -113,6 +119,165 @@ public sealed class McpToolServerTests
         Assert.Equal(@"C:\temp\created.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
         Assert.Equal("not_applicable", result.StructuredContent.GetProperty("approvalState").GetString());
         Assert.Equal("not_applicable", result.StructuredContent.GetProperty("mutationPermissionState").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorkbookSave_ReturnsStructuredSuccess()
+    {
+        var server = new McpToolServer(new ConnectionAwareResolver());
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorkbookSave,
+            JsonSerializer.SerializeToElement(new { connectionId = "conn-1" }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("save", result.StructuredContent.GetProperty("operation").GetString());
+        Assert.Equal("conn-1", result.StructuredContent.GetProperty("connectionId").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorkbookSaveAs_ReturnsRetargetedConnection()
+    {
+        var server = new McpToolServer(new ConnectionAwareResolver());
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorkbookSaveAs,
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = "conn-1",
+                newWorkbookPath = @"C:\temp\saved-as.xlsx"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("save_as", result.StructuredContent.GetProperty("operation").GetString());
+        Assert.Equal(@"C:\temp\saved-as.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
+        Assert.Equal("conn-1", result.StructuredContent.GetProperty("connectionId").GetString());
+        Assert.Equal("not_applicable", result.StructuredContent.GetProperty("approvalState").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorkbookSaveAs_RetargetsLaterConnectionBoundCalls()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var resolver = new RetargetingConnectionResolver(new WorkbookService(new FakeExcelSession { Workbook = fakeWorkbook }));
+        var server = new McpToolServer(resolver);
+
+        var saveAs = await server.CallToolAsync(
+            ToolNames.WorkbookSaveAs,
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = "conn-1",
+                newWorkbookPath = @"C:\temp\saved-as.xlsx"
+            }));
+
+        Assert.False(saveAs.IsError);
+        Assert.Equal(@"C:\temp\saved-as.xlsx", saveAs.StructuredContent.GetProperty("workbookPath").GetString());
+
+        var deleteSheet = await server.CallToolAsync(
+            ToolNames.WorksheetDelete,
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = "conn-1",
+                sheetName = "TempSheet"
+            }));
+
+        Assert.False(deleteSheet.IsError);
+        Assert.Equal(@"C:\temp\saved-as.xlsx", deleteSheet.StructuredContent.GetProperty("workbookPath").GetString());
+        Assert.Equal(@"C:\temp\saved-as.xlsx", resolver.LastResolvedPath);
+
+        var connection = await server.CallToolAsync(
+            ToolNames.SessionGetConnection,
+            JsonSerializer.SerializeToElement(new { connectionId = "conn-1" }));
+
+        Assert.False(connection.IsError);
+        Assert.Equal(@"C:\temp\saved-as.xlsx", connection.StructuredContent.GetProperty("workbookPath").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetCreate_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetCreate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "TempSheet"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("create", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("TempSheet", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Single(fakeWorkbook.CreatedWorksheets);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetRename_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetRename,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "OldSheet",
+                newSheetName = "NewSheet"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("rename", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("NewSheet", result.StructuredContent.GetProperty("newSheetName").GetString());
+        Assert.Single(fakeWorkbook.RenamedWorksheets);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetDelete_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetDelete,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "TempSheet"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("delete", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Single(fakeWorkbook.DeletedWorksheets);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TableDelete_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableDelete,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("delete", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("SalesTable", result.StructuredContent.GetProperty("tableName").GetString());
+        Assert.Single(fakeWorkbook.DeletedTables);
     }
 
     [Fact]
@@ -711,6 +876,12 @@ public sealed class McpToolServerTests
         public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(_exception);
 
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(_exception);
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(_exception);
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromException<IReadOnlyList<WorkbookConnectionInfo>>(_exception);
 
@@ -757,6 +928,12 @@ public sealed class McpToolServerTests
         public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(_exception);
 
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(_exception);
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(_exception);
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromException<IReadOnlyList<WorkbookConnectionInfo>>(_exception);
 
@@ -795,6 +972,12 @@ public sealed class McpToolServerTests
 
         public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             new TaskCompletionSource<WorkbookConnectionResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<WorkbookSaveResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<WorkbookSaveResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             new TaskCompletionSource<IReadOnlyList<WorkbookConnectionInfo>>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
@@ -844,6 +1027,12 @@ public sealed class McpToolServerTests
 
         public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException<WorkbookConnectionResult>(new InvalidOperationException("not used"));
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(new InvalidOperationException("not used"));
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookSaveResult>(new InvalidOperationException("not used"));
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(Array.Empty<WorkbookConnectionInfo>());
@@ -936,6 +1125,32 @@ public sealed class McpToolServerTests
                 MutationPermissionScope = "none"
             });
 
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookSaveResult(
+                true,
+                target.WorkbookPath ?? @"C:\temp\connected.xlsx",
+                target.WorkbookPath ?? @"C:\temp\connected.xlsx",
+                "save",
+                target.ConnectionId)
+            {
+                ApprovalState = target.ConnectionId is null ? "missing" : "not_applicable",
+                MutationPermissionState = target.ConnectionId is null ? "missing" : "not_applicable",
+                MutationPermissionScope = "none"
+            });
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookSaveResult(
+                true,
+                request.WorkbookPath ?? @"C:\temp\connected.xlsx",
+                request.NewWorkbookPath,
+                "save_as",
+                request.ConnectionId)
+            {
+                ApprovalState = "not_applicable",
+                MutationPermissionState = "not_applicable",
+                MutationPermissionScope = "none"
+            });
+
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(
             [
@@ -962,6 +1177,74 @@ public sealed class McpToolServerTests
 
         public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
             Task.FromResult(new AttachedMutationApprovalRevokeResult(true, target.WorkbookPath ?? @"C:\temp\connected.xlsx", true));
+    }
+
+    private sealed class RetargetingConnectionResolver : IWorkbookServiceResolver
+    {
+        private readonly WorkbookService _service;
+        private string _workbookPath = @"C:\temp\connected.xlsx";
+
+        public RetargetingConnectionResolver(WorkbookService service)
+        {
+            _service = service;
+        }
+
+        public string? LastResolvedPath { get; private set; }
+
+        public Task<T> ExecuteAsync<T>(WorkbookTarget target, Func<ResolvedWorkbookContext, Task<T>> action, CancellationToken cancellationToken = default)
+        {
+            var path = target.ConnectionId is not null ? _workbookPath : target.WorkbookPath!;
+            LastResolvedPath = path;
+            return action(new ResolvedWorkbookContext(path, target.ConnectionId, _service));
+        }
+
+        public Task<IReadOnlyList<WorkbookSummary>> ListOpenWorkbooksAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkbookSummary>>([new WorkbookSummary("connected.xlsx", _workbookPath, true)]);
+
+        public Task<WorkbookConnectionResult> ConnectAsync(WorkbookConnectionRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(BuildConnectResult());
+
+        public Task<WorkbookConnectionResult> CreateWorkbookAsync(WorkbookCreateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkbookConnectionResult>(new InvalidOperationException("not used"));
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookSaveResult(true, _workbookPath, _workbookPath, "save", target.ConnectionId));
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default)
+        {
+            _workbookPath = request.NewWorkbookPath;
+            return Task.FromResult(new WorkbookSaveResult(true, @"C:\temp\connected.xlsx", _workbookPath, "save_as", request.ConnectionId));
+        }
+
+        public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>([BuildConnectionInfo("conn-1")]);
+
+        public Task<WorkbookConnectionInfo> GetConnectionAsync(string connectionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(BuildConnectionInfo(connectionId));
+
+        public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookDisconnectResult(true, connectionId, _workbookPath, true));
+
+        public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionGrantResult>(new InvalidOperationException("not used"));
+
+        public Task<MutationPermissionRevokeResult> RevokeMutationPermissionAsync(MutationPermissionRevokeRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionRevokeResult>(new InvalidOperationException("not used"));
+
+        public Task<MutationPermissionStatusResult> GetMutationPermissionStatusAsync(MutationPermissionStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<MutationPermissionStatusResult>(new InvalidOperationException("not used"));
+
+        public Task<AttachedMutationApprovalGrantResult> GrantAttachedMutationApprovalAsync(WorkbookTarget target, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<AttachedMutationApprovalGrantResult>(new InvalidOperationException("not used"));
+
+        public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromException<AttachedMutationApprovalRevokeResult>(new InvalidOperationException("not used"));
+
+        private WorkbookConnectionInfo BuildConnectionInfo(string connectionId) =>
+            new(connectionId, Path.GetFileName(_workbookPath), _workbookPath, "attached", "attach", "workbook-owner", true, "missing", null, null);
+
+        private WorkbookConnectionResult BuildConnectResult() =>
+            new(true, "conn-1", Path.GetFileName(_workbookPath), _workbookPath, "attached", "attach", "workbook-owner", false, true, "missing", null, null);
     }
 
     private sealed class ApprovalAwareConnectionResolver : IWorkbookServiceResolver
@@ -1000,6 +1283,53 @@ public sealed class McpToolServerTests
                 null)
             {
                 HostSessionId = "host-1",
+                MutationPermissionState = "not_applicable",
+                MutationPermissionScope = "none"
+            });
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default)
+        {
+            var workbookPath = target.WorkbookPath ?? WorkbookPath;
+            var approval = _registry.Lookup(workbookPath);
+            return Task.FromResult(new WorkbookSaveResult(
+                true,
+                workbookPath,
+                workbookPath,
+                "save",
+                target.ConnectionId)
+            {
+                HostSessionId = "host-1",
+                ApprovalState = approval.State switch
+                {
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
+                    _ => "missing"
+                },
+                MutationPermissionState = approval.State switch
+                {
+                    MutationPermissionState.Active => "active",
+                    MutationPermissionState.Expired => "expired",
+                    _ => "missing"
+                },
+                MutationPermissionScope = approval.Scope == MutationPermissionScope.Session ? "session" : approval.Scope == MutationPermissionScope.Workbook ? "workbook" : "none",
+                MutationPermissionWorkbookPath = approval.Lease?.WorkbookPath,
+                MutationPermissionExpiresAtUtc = approval.Lease?.ExpiresAtUtc,
+                MutationPermissionLastUsedAtUtc = approval.Lease?.LastUsedAtUtc,
+                ApprovalExpiresAtUtc = approval.Lease?.ExpiresAtUtc,
+                ApprovalLastUsedAtUtc = approval.Lease?.LastUsedAtUtc
+            });
+        }
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkbookSaveResult(
+                true,
+                request.WorkbookPath ?? WorkbookPath,
+                request.NewWorkbookPath,
+                "save_as",
+                request.ConnectionId)
+            {
+                HostSessionId = "host-1",
+                ApprovalState = "not_applicable",
                 MutationPermissionState = "not_applicable",
                 MutationPermissionScope = "none"
             });

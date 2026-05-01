@@ -21,6 +21,14 @@ internal interface IWorkbookServiceResolver
         WorkbookCreateRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<WorkbookSaveResult> SaveWorkbookAsync(
+        WorkbookTarget target,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkbookSaveResult> SaveWorkbookAsAsync(
+        WorkbookSaveAsRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default);
 
     Task<WorkbookConnectionInfo> GetConnectionAsync(string connectionId, CancellationToken cancellationToken = default);

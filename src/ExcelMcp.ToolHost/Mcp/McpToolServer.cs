@@ -116,6 +116,16 @@ public sealed class McpToolServer
                 required = new[] { "connectionId" }
             })),
         new(
+            ToolNames.WorkbookSave,
+            "Save the targeted workbook in place.",
+            BuildTargetSchema()),
+        new(
+            ToolNames.WorkbookSaveAs,
+            "Save the targeted workbook to a new full path and retarget the connection when applicable.",
+            BuildTargetSchema(
+                ["newWorkbookPath"],
+                ("newWorkbookPath", new { type = "string" }))),
+        new(
             ToolNames.WorkbookListInventory,
             "List workbook sheets, tables, connections, and queries.",
             BuildTargetSchema()),
@@ -123,6 +133,25 @@ public sealed class McpToolServer
             ToolNames.WorkbookListNames,
             "List workbook and worksheet-scoped Excel names.",
             BuildTargetSchema()),
+        new(
+            ToolNames.WorksheetCreate,
+            "Create a new worksheet at the end of the workbook.",
+            BuildTargetSchema(
+                ["sheetName"],
+                ("sheetName", new { type = "string" }))),
+        new(
+            ToolNames.WorksheetRename,
+            "Rename an existing worksheet by exact current sheet name.",
+            BuildTargetSchema(
+                ["sheetName", "newSheetName"],
+                ("sheetName", new { type = "string" }),
+                ("newSheetName", new { type = "string" }))),
+        new(
+            ToolNames.WorksheetDelete,
+            "Delete an existing worksheet by exact sheet name.",
+            BuildTargetSchema(
+                ["sheetName"],
+                ("sheetName", new { type = "string" }))),
         new(
             ToolNames.QueryGet,
             "Get a workbook query definition by name.",
@@ -244,6 +273,12 @@ public sealed class McpToolServer
                 ("tableName", new { type = "string" }),
                 ("hasHeaders", new { type = "boolean" }),
                 ("showTotals", new { type = "boolean" }))),
+        new(
+            ToolNames.TableDelete,
+            "Delete one Excel table by exact table name.",
+            BuildTargetSchema(
+                ["tableName"],
+                ("tableName", new { type = "string" }))),
         new(
             ToolNames.RangeRead,
             "Read one rectangular workbook range from a specific worksheet.",
@@ -432,8 +467,13 @@ public sealed class McpToolServer
             ToolNames.SessionListConnections => HandleListConnectionsAsync(cancellationToken),
             ToolNames.SessionGetConnection => HandleGetConnectionAsync(arguments, cancellationToken),
             ToolNames.SessionDisconnectWorkbook => HandleDisconnectWorkbookAsync(arguments, cancellationToken),
+            ToolNames.WorkbookSave => HandleWorkbookSaveAsync(arguments, cancellationToken),
+            ToolNames.WorkbookSaveAs => HandleWorkbookSaveAsAsync(arguments, cancellationToken),
             ToolNames.WorkbookListInventory => HandleListInventoryAsync(arguments, cancellationToken),
             ToolNames.WorkbookListNames => HandleListNamesAsync(arguments, cancellationToken),
+            ToolNames.WorksheetCreate => HandleWorksheetCreateAsync(arguments, cancellationToken),
+            ToolNames.WorksheetRename => HandleWorksheetRenameAsync(arguments, cancellationToken),
+            ToolNames.WorksheetDelete => HandleWorksheetDeleteAsync(arguments, cancellationToken),
             ToolNames.QueryGet => HandleGetQueryAsync(arguments, cancellationToken),
             ToolNames.NameGet => HandleGetNameAsync(arguments, cancellationToken),
             ToolNames.NameRead => HandleReadNameAsync(arguments, cancellationToken),
@@ -451,6 +491,7 @@ public sealed class McpToolServer
             ToolNames.TableAppendRows => HandleTableAppendRowsAsync(arguments, cancellationToken),
             ToolNames.TableReplaceRows => HandleTableReplaceRowsAsync(arguments, cancellationToken),
             ToolNames.TableSetOptions => HandleTableSetOptionsAsync(arguments, cancellationToken),
+            ToolNames.TableDelete => HandleTableDeleteAsync(arguments, cancellationToken),
             ToolNames.RangeRead => HandleRangeReadAsync(arguments, cancellationToken),
             ToolNames.RangeWrite => HandleRangeWriteAsync(arguments, cancellationToken),
             ToolNames.SessionGrantMutationPermission => HandleGrantMutationPermissionAsync(arguments, cancellationToken),
@@ -494,6 +535,21 @@ public sealed class McpToolServer
         return ExecuteAsObjectAsync(_workbookServices.DisconnectAsync(connectionId, cancellationToken));
     }
 
+    private Task<object> HandleWorkbookSaveAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        return ExecuteAsObjectAsync(_workbookServices.SaveWorkbookAsync(target, cancellationToken));
+    }
+
+    private Task<object> HandleWorkbookSaveAsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var request = new WorkbookSaveAsRequest(
+            WorkbookPath: GetOptionalString(arguments, "workbookPath"),
+            ConnectionId: GetOptionalString(arguments, "connectionId"),
+            NewWorkbookPath: GetRequiredString(arguments, "newWorkbookPath"));
+        return ExecuteAsObjectAsync(_workbookServices.SaveWorkbookAsAsync(request, cancellationToken));
+    }
+
     private async Task<object> HandleListInventoryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -509,6 +565,37 @@ public sealed class McpToolServer
         return await _workbookServices.ExecuteAsync(
             target,
             resolved => resolved.Service.ListNamesAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetCreateAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.CreateWorksheetAsync(resolved.WorkbookPath, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetRenameAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        var newSheetName = GetRequiredString(arguments, "newSheetName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.RenameWorksheetAsync(resolved.WorkbookPath, sheetName, newSheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetDeleteAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.DeleteWorksheetAsync(resolved.WorkbookPath, sheetName, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -714,6 +801,16 @@ public sealed class McpToolServer
         return await _workbookServices.ExecuteAsync(
             target,
             resolved => resolved.Service.SetTableOptionsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleTableDeleteAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var tableName = GetRequiredString(arguments, "tableName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.DeleteTableAsync(resolved.WorkbookPath, tableName, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1031,6 +1128,30 @@ public sealed class McpToolServer
             Task.FromException<WorkbookConnectionResult>(new WorkbookTargetResolutionException(
                 "connection_not_supported",
                 "Workbook connections are not available on a shared workbook service resolver."));
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsync(WorkbookTarget target, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(target.WorkbookPath))
+            {
+                throw new WorkbookTargetResolutionException(
+                    "workbook_target_required",
+                    "This tool requires 'workbookPath' when the server is using a shared workbook service.");
+            }
+
+            return _workbookService.SaveWorkbookAsync(target.WorkbookPath!, target.ConnectionId, cancellationToken);
+        }
+
+        public Task<WorkbookSaveResult> SaveWorkbookAsAsync(WorkbookSaveAsRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(request.WorkbookPath))
+            {
+                throw new WorkbookTargetResolutionException(
+                    "workbook_target_required",
+                    "This tool requires 'workbookPath' when the server is using a shared workbook service.");
+            }
+
+            return _workbookService.SaveWorkbookAsAsync(request.WorkbookPath!, request.NewWorkbookPath, request.ConnectionId, cancellationToken);
+        }
 
         public Task<IReadOnlyList<WorkbookConnectionInfo>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkbookConnectionInfo>>(Array.Empty<WorkbookConnectionInfo>());

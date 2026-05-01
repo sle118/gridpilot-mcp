@@ -58,6 +58,18 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         return Task.CompletedTask;
     }
 
+    public Task SaveAsAsync(string path, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ComDispatch.InvokeMethod(_workbook, "SaveAs", path);
+        _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_saved_as", new Dictionary<string, object?>
+        {
+            ["workbookName"] = Name,
+            ["workbookPath"] = FullPath
+        });
+        return Task.CompletedTask;
+    }
+
     public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -516,6 +528,96 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             Errors: errors));
     }
 
+    public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (FindWorksheetByName(sheetName) is { } existing)
+        {
+            ComDispatch.ReleaseIfComObject(existing);
+            throw new InvalidOperationException($"Worksheet '{sheetName}' already exists.");
+        }
+
+        object? worksheets = null;
+        object? lastWorksheet = null;
+        object? worksheet = null;
+        try
+        {
+            worksheets = GetCollection(_workbook, "Worksheets");
+            var count = ComDispatch.GetProperty<int>(worksheets, "Count");
+            if (count > 0)
+            {
+                lastWorksheet = ComDispatch.GetProperty<object>(worksheets, "Item", count);
+            }
+
+            worksheet = lastWorksheet is null
+                ? ComDispatch.InvokeMethod(worksheets, "Add")
+                : ComDispatch.InvokeMethod(worksheets, "Add", Type.Missing, lastWorksheet);
+
+            if (worksheet is null)
+            {
+                throw new InvalidOperationException($"Excel did not create worksheet '{sheetName}'.");
+            }
+
+            ComDispatch.SetProperty(worksheet, "Name", sheetName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+            ComDispatch.ReleaseIfComObject(lastWorksheet);
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+    }
+
+    public Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (FindWorksheetByName(newSheetName) is { } existing)
+        {
+            ComDispatch.ReleaseIfComObject(existing);
+            throw new InvalidOperationException($"Worksheet '{newSheetName}' already exists.");
+        }
+
+        var worksheet = FindWorksheetByName(sheetName)
+            ?? throw new InvalidOperationException($"Worksheet '{sheetName}' was not found.");
+
+        try
+        {
+            ComDispatch.SetProperty(worksheet, "Name", newSheetName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var worksheetCount = GetWorksheetCount();
+        if (worksheetCount <= 1)
+        {
+            throw new InvalidOperationException("Excel does not allow deleting the last remaining worksheet.");
+        }
+
+        var worksheet = FindWorksheetByName(sheetName)
+            ?? throw new InvalidOperationException($"Worksheet '{sheetName}' was not found.");
+
+        try
+        {
+            ComDispatch.InvokeMethod(worksheet, "Delete");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
     public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -732,6 +834,24 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
                 ComDispatch.SetProperty(table, "ShowTotals", request.ShowTotals.Value);
             }
 
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    public Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? table = null;
+        try
+        {
+            table = FindTableByName(tableName)
+                ?? throw new InvalidOperationException($"Table '{tableName}' was not found.");
+            ComDispatch.InvokeMethod(table, "Delete");
             return Task.CompletedTask;
         }
         finally
@@ -1144,6 +1264,19 @@ in
         }
 
         return null;
+    }
+
+    private int GetWorksheetCount()
+    {
+        var worksheets = GetCollection(_workbook, "Worksheets");
+        try
+        {
+            return ComDispatch.GetProperty<int>(worksheets, "Count");
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
     }
 
     private static string BuildMashupConnectionString(string queryName) =>

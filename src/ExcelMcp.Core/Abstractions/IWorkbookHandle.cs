@@ -8,6 +8,7 @@ public interface IWorkbookHandle : IAsyncDisposable
     string FullPath { get; }
 
     Task SaveAsync(CancellationToken cancellationToken = default);
+    Task SaveAsAsync(string path, CancellationToken cancellationToken = default);
     Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default);
@@ -25,12 +26,16 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default);
     Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default);
     Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default);
+    Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default);
+    Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default);
+    Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default);
     Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default);
     Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default);
     Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default);
     Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default);
+    Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default);
 
     Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);

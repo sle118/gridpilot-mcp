@@ -11,6 +11,8 @@ It is intended as a durable planning reference for future agent sessions, not as
 The bridge currently supports:
 
 - workbook inventory for sheets, tables, connections, and queries
+- workbook save and save-as
+- worksheet create, rename, and delete
 - workbook and worksheet-scoped name inventory
 - named-range reads
 - workbook and worksheet-scoped name create/update/delete
@@ -19,6 +21,7 @@ The bridge currently supports:
 - targeted query refresh
 - diagnostic query probing
 - temp-query cleanup
+- table create, resize, append, replace, delete, and core options updates
 - rectangular range read
 - multi-range rectangular value write
 
@@ -34,47 +37,34 @@ The bridge currently supports:
    - resolve named ranges to addresses and values
    - add table-aware read paths so agents can work against stable structures instead of raw coordinates
 
-3. Table operations
-   - create tables from ranges
-   - inspect table schema more deeply
-   - resize tables
-   - write rows into tables
-   - toggle core attributes such as headers and totals row
-
-4. Worksheet lifecycle
-   - create worksheets
-   - rename worksheets
-   - delete disposable worksheets
-   - support temp-sheet workflows cleanly
-
-5. Formatting and presentation controls
+3. Formatting and presentation controls
    - inspect and change basic formatting
    - support common report-polish scenarios
    - keep formatting behind the same safety expectations as other mutating operations
 
 ## Following five surfaces after that
 
-6. Query and connection lifecycle
+4. Query and connection lifecycle
    - create, delete, and rename queries
    - create or update connections
    - inspect dependency relationships between queries, connections, tables, and load targets
 
-7. Formula and calculation-aware worksheet operations
+5. Formula and calculation-aware worksheet operations
    - distinguish formula writes from plain value writes
    - trigger targeted recalculation
    - inspect formula and cell error states directly
 
-8. Workbook structure operations
+6. Workbook structure operations
    - move or copy worksheets
    - manage visibility and workbook working layout more intentionally
    - support broader workbook orchestration while keeping COM isolated
 
-9. Data quality and validation surfaces
+7. Data quality and validation surfaces
    - inspect and manage validation rules
    - inspect conditional formatting presence
    - support overwrite-safety and worksheet hygiene checks
 
-10. Structured import and export workflows
+8. Structured import and export workflows
    - export ranges, tables, or query outputs to CSV or JSON
    - import tabular payloads into ranges or tables
    - support diagnostics, snapshots, and rollback-friendly workflows
@@ -92,6 +82,6 @@ That means:
 
 ## Notes
 
-- Query formula edit and range read/write are already implemented and should be treated as the baseline edit surface.
+- Query formula edit, range read/write, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
 - Any newly promoted mutating surface should continue to flow through the shared-session approval and safety seam.
 - Live Excel coverage should be extended alongside each new surface, but remain opt-in.

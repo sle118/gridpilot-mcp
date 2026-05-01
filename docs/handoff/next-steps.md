@@ -3,7 +3,7 @@
 ## Immediate priorities
 
 1. Add the next mutating workbook families on top of the new names baseline: table lifecycle/mutation, worksheet lifecycle, and formula-aware operations.
-2. Promote worksheet lifecycle as the next bounded workbook-structure family, or formula-aware operations if calculation semantics become the more urgent bottleneck.
+2. Promote formula-aware operations as the next bounded workbook-structure family now that worksheet lifecycle and persistence are in place.
 3. Improve unsafe UI-state detection beyond the current readiness/interactivity-plus-edit/modal heuristics now that multiple connected workbooks can coexist in one host.
 4. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
 5. Package the remaining workbook-surface wave into small backlog or delegation slices for future agents.
@@ -11,7 +11,7 @@
 
 ## Suggested first bounded implementation slice
 
-- one next mutating workbook workflow on top of the new names/table lifecycle surface, ideally worksheet lifecycle or formula-aware operations
+- one next mutating workbook workflow on top of the new persistence + worksheet/table baseline, ideally formula-aware operations
 - mock-first tests plus opt-in live validation for the above
 - keep broader workbook patching and formatting workflows out of scope in the same slice
 

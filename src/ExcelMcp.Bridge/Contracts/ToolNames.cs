@@ -8,8 +8,13 @@ public static class ToolNames
     public const string SessionListConnections = "session_list_connections";
     public const string SessionGetConnection = "session_get_connection";
     public const string SessionDisconnectWorkbook = "session_disconnect_workbook";
+    public const string WorkbookSave = "workbook_save";
+    public const string WorkbookSaveAs = "workbook_save_as";
     public const string WorkbookListInventory = "workbook_list_inventory";
     public const string WorkbookListNames = "workbook_list_names";
+    public const string WorksheetCreate = "worksheet_create";
+    public const string WorksheetRename = "worksheet_rename";
+    public const string WorksheetDelete = "worksheet_delete";
     public const string QueryGet = "query_get";
     public const string NameGet = "name_get";
     public const string NameRead = "name_read";
@@ -26,6 +31,7 @@ public static class ToolNames
     public const string TableResize = "table_resize";
     public const string TableAppendRows = "table_append_rows";
     public const string TableReplaceRows = "table_replace_rows";
+    public const string TableDelete = "table_delete";
     public const string TableSetOptions = "table_set_options";
     public const string RangeRead = "range_read";
     public const string RangeWrite = "range_write";

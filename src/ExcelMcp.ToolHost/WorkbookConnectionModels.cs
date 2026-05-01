@@ -34,6 +34,11 @@ internal sealed record WorkbookConnectionRequest(string? WorkbookPath, string? W
 
 internal sealed record WorkbookCreateRequest(string WorkbookPath);
 
+internal sealed record WorkbookSaveAsRequest(
+    string? WorkbookPath,
+    string? ConnectionId,
+    string NewWorkbookPath);
+
 internal sealed record WorkbookConnectionResult(
     bool Succeeded,
     string ConnectionId,

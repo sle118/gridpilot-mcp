@@ -49,6 +49,7 @@ The starter implementation projects still use provisional `ExcelMcp.*` assembly 
 - Keep live Excel tests optional and excluded from normal repo validation
 - Never require live Excel for ordinary CI or GitHub validation
 - Live tests may assume a developer workstation with Excel installed, but must remain opt-in
+- If the MCP host is running in the current Codex environment, assume local `dotnet build` / `dotnet test` are unavailable because the running host may lock executable outputs; use a separate compile-run pass after the host is stopped
 
 ## Commit hygiene
 

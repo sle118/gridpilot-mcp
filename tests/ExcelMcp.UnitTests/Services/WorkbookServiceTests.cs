@@ -166,6 +166,97 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task SaveWorkbookAsync_SavesWorkbookInPlace()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.SaveWorkbookAsync(@"C:\temp\book.xlsx", "conn-1");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("save", result.Operation);
+        Assert.Equal(fakeWorkbook.FullPath, result.WorkbookPath);
+        Assert.Equal("conn-1", result.ConnectionId);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SaveWorkbookAsAsync_SavesWorkbookToNewPath()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.SaveWorkbookAsAsync(@"C:\temp\book.xlsx", @"C:\temp\saved-as.xlsx", "conn-1");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("save_as", result.Operation);
+        Assert.Equal(@"C:\temp\book.xlsx", result.SourceWorkbookPath);
+        Assert.Equal(@"C:\temp\saved-as.xlsx", result.WorkbookPath);
+        Assert.Equal(1, fakeWorkbook.SaveAsCallCount);
+    }
+
+    [Fact]
+    public async Task CreateWorksheetAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CreateWorksheetAsync(@"C:\temp\book.xlsx", "TempSheet");
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.CreatedWorksheets);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task RenameWorksheetAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.RenameWorksheetAsync(@"C:\temp\book.xlsx", "OldSheet", "NewSheet");
+
+        Assert.True(result.Succeeded);
+        var renamed = Assert.Single(fakeWorkbook.RenamedWorksheets);
+        Assert.Equal("OldSheet", renamed.SheetName);
+        Assert.Equal("NewSheet", renamed.NewSheetName);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteWorksheetAsync_ReturnsStructuredFailureForLastSheet()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnDeleteWorksheetAsync = _ => throw new InvalidOperationException("Excel does not allow deleting the last remaining worksheet.");
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.DeleteWorksheetAsync(@"C:\temp\book.xlsx", "Sheet1");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("worksheet_delete_failed", result.Error?.Code);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteTableAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.DeleteTableAsync(@"C:\temp\book.xlsx", "SalesTable");
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.DeletedTables);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
     public async Task AppendTableRowsAsync_RequiresApprovalInAttachedMode()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -263,6 +354,44 @@ public sealed class WorkbookServiceTests
         Assert.False(result.Succeeded);
         Assert.Equal("shared_session_ui_unsafe", result.Error?.Code);
         Assert.Empty(fakeWorkbook.UpdatedTableOptions);
+    }
+
+    [Fact]
+    public async Task SaveWorkbookAsync_RequiresMutationPermissionInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.SaveWorkbookAsync(@"C:\temp\book.xlsx");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CreateWorksheetAsync_AllowsAttachedMutationWithApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var registry = new InMemoryAttachedMutationApprovalRegistry();
+        registry.Grant(@"C:\temp\book.xlsx", TimeSpan.FromMinutes(10), out _);
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, registry));
+
+        var result = await sut.CreateWorksheetAsync(@"C:\temp\book.xlsx", "TempSheet");
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.CreatedWorksheets);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
     }
 
     [Fact]
@@ -973,6 +1102,12 @@ public sealed class WorkbookServiceTests
             return Task.CompletedTask;
         }
 
+        public Task SaveAsAsync(string path, CancellationToken cancellationToken = default)
+        {
+            SaveCallCount++;
+            return Task.CompletedTask;
+        }
+
         public Task CloseAsync(bool saveChanges, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<IReadOnlyList<SheetSummary>> ListSheetsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SheetSummary>>(Array.Empty<SheetSummary>());
         public Task<IReadOnlyList<TableSummary>> ListTablesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TableSummary>>(Array.Empty<TableSummary>());
@@ -988,12 +1123,16 @@ public sealed class WorkbookServiceTests
         public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
         public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
         public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => Task.FromResult(new CleanupResult(0, Array.Empty<string>()));
+        public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableDetailResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), 0, 0, true, false, false, null));
         public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), Array.Empty<IReadOnlyList<object?>>(), false));
         public Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ResizeTableAsync(TableResizeRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task AppendTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ReplaceTableRowsAsync(TableRowsWriteRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
         public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { null } }));
