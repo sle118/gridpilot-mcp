@@ -24,6 +24,7 @@ The bridge currently supports:
 - table create, resize, append, replace, delete, and core options updates
 - rectangular range read
 - multi-range rectangular value write
+- rectangular formula read/write and clear-contents range operations
 
 ## Next five surfaces to prioritize
 
@@ -50,9 +51,9 @@ The bridge currently supports:
    - inspect dependency relationships between queries, connections, tables, and load targets
 
 5. Formula and calculation-aware worksheet operations
-   - distinguish formula writes from plain value writes
    - trigger targeted recalculation
    - inspect formula and cell error states directly
+   - add richer calculation-aware workflows on top of the new formula range baseline
 
 6. Workbook structure operations
    - move or copy worksheets
@@ -82,6 +83,6 @@ That means:
 
 ## Notes
 
-- Query formula edit, range read/write, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
+- Query formula edit, range read/write, range formula/clear operations, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
 - Any newly promoted mutating surface should continue to flow through the shared-session approval and safety seam.
 - Live Excel coverage should be extended alongside each new surface, but remain opt-in.

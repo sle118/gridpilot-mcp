@@ -14,7 +14,10 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string QueryName, RefreshOptions? Options)> RefreshCalls { get; } = [];
     public List<(string QueryName, string Formula)> SetQueryFormulaCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
+    public List<(string SheetName, string Address)> ReadRangeFormulaCalls { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
+    public List<(string SheetName, string Address, string?[,] Formulas)> WriteRangeFormulaCalls { get; } = [];
+    public List<(string SheetName, string Address)> ClearRangeCalls { get; } = [];
 
     public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
@@ -61,6 +64,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Func<string, string?, Task<RangeData>> OnReadRangeAsync { get; set; } =
         (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "value" } }));
 
+    public Func<string, string?, Task<RangeData>> OnReadRangeFormulasAsync { get; set; } =
+        (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "=1+1" } }));
+
     public Func<string, string?, Task<RangeData>> OnReadNamedRangeAsync { get; set; } =
         (name, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { "value" } }));
 
@@ -99,6 +105,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Func<string, object?[,], string?, Task> OnWriteRangeAsync { get; set; } =
         (address, values, sheetName) => Task.CompletedTask;
+
+    public Func<string, string?[,], string?, Task> OnWriteRangeFormulasAsync { get; set; } =
+        (address, formulas, sheetName) => Task.CompletedTask;
+
+    public Func<string, string?, Task> OnClearRangeContentsAsync { get; set; } =
+        (address, sheetName) => Task.CompletedTask;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task SaveAsync(CancellationToken cancellationToken = default)
@@ -153,6 +165,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         ReadRangeCalls.Add((sheetName ?? "Sheet1", address));
         return OnReadRangeAsync(address, sheetName);
+    }
+
+    public Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ReadRangeFormulaCalls.Add((sheetName ?? "Sheet1", address));
+        return OnReadRangeFormulasAsync(address, sheetName);
     }
 
     public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) =>
@@ -222,5 +240,17 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         WriteRangeCalls.Add((sheetName ?? "Sheet1", address, values));
         return OnWriteRangeAsync(address, values, sheetName);
+    }
+
+    public Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        WriteRangeFormulaCalls.Add((sheetName ?? "Sheet1", address, formulas));
+        return OnWriteRangeFormulasAsync(address, formulas, sheetName);
+    }
+
+    public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ClearRangeCalls.Add((sheetName ?? "Sheet1", address));
+        return OnClearRangeContentsAsync(address, sheetName);
     }
 }

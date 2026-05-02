@@ -26,6 +26,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<TableOptionsUpdateRequest> UpdatedTableOptions { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address)> ReadRangeCalls { get; } = [];
+    public List<(string SheetName, string Address)> ReadRangeFormulaCalls { get; } = [];
+    public List<(string SheetName, string Address, string?[,] Formulas)> WriteRangeFormulaCalls { get; } = [];
+    public List<(string SheetName, string Address)> ClearRangeCalls { get; } = [];
     public List<string> CreatedWorksheets { get; } = [];
     public List<(string SheetName, string NewSheetName)> RenamedWorksheets { get; } = [];
     public List<string> DeletedWorksheets { get; } = [];
@@ -79,6 +82,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         ReadRangeCalls.Add((sheetName ?? "Sheet1", address));
         return Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, CreateMatrixForAddress(address)));
+    }
+
+    public Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ReadRangeFormulaCalls.Add((sheetName ?? "Sheet1", address));
+        return Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, CreateFormulaMatrixForAddress(address)));
     }
 
     public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) =>
@@ -150,6 +159,18 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return Task.CompletedTask;
     }
 
+    public Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        WriteRangeFormulaCalls.Add((sheetName ?? "Sheet1", address, formulas));
+        return Task.CompletedTask;
+    }
+
+    public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ClearRangeCalls.Add((sheetName ?? "Sheet1", address));
+        return Task.CompletedTask;
+    }
+
     private static object?[,] CreateMatrixForAddress(string address)
     {
         var (rows, columns) = GetRangeSize(address);
@@ -159,6 +180,21 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
             for (var column = 0; column < columns; column++)
             {
                 matrix[row, column] = row == 0 && column == 0 ? "value" : null;
+            }
+        }
+
+        return matrix;
+    }
+
+    private static object?[,] CreateFormulaMatrixForAddress(string address)
+    {
+        var (rows, columns) = GetRangeSize(address);
+        var matrix = new object?[rows, columns];
+        for (var row = 0; row < rows; row++)
+        {
+            for (var column = 0; column < columns; column++)
+            {
+                matrix[row, column] = row == 0 && column == 0 ? "=1+1" : null;
             }
         }
 

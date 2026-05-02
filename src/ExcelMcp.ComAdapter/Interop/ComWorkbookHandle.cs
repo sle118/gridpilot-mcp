@@ -884,6 +884,29 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
+    public Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            return Task.FromResult(new RangeData(
+                SheetName: ComDispatch.GetProperty<string>(worksheet, "Name"),
+                Address: GetOptionalProperty(range!, "Address")?.ToString() ?? address,
+                Values: ReadFormulaMatrix(range!)));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
     public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -903,6 +926,7 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             ComDispatch.ReleaseIfComObject(nameObject);
         }
     }
+
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -922,6 +946,56 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             {
                 ComDispatch.SetProperty(range!, "Value2", values);
             }
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            if (GetElementCount(formulas) == 1)
+            {
+                ComDispatch.SetProperty(range!, "Formula", FirstValue(formulas));
+            }
+            else
+            {
+                ComDispatch.SetProperty(range!, "Formula", formulas);
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            ComDispatch.InvokeMethod(range!, "ClearContents");
             return Task.CompletedTask;
         }
         finally
@@ -1301,6 +1375,50 @@ in
         return singleValue;
     }
 
+    private static object?[,] ReadFormulaMatrix(object range)
+    {
+        object? rows = null;
+        object? columns = null;
+        object? cells = null;
+        try
+        {
+            rows = ComDispatch.GetProperty<object>(range, "Rows");
+            columns = ComDispatch.GetProperty<object>(range, "Columns");
+            cells = GetCollection(range, "Cells");
+            var rowCount = ComDispatch.GetProperty<int>(rows, "Count");
+            var columnCount = ComDispatch.GetProperty<int>(columns, "Count");
+            var formulas = new object?[rowCount, columnCount];
+
+            for (var rowIndex = 1; rowIndex <= rowCount; rowIndex++)
+            {
+                for (var columnIndex = 1; columnIndex <= columnCount; columnIndex++)
+                {
+                    object? cell = null;
+                    try
+                    {
+                        cell = ComDispatch.GetProperty<object>(cells, "Item", rowIndex, columnIndex);
+                        var hasFormula = ToBoolean(GetOptionalProperty(cell, "HasFormula"));
+                        formulas[rowIndex - 1, columnIndex - 1] = hasFormula
+                            ? GetOptionalProperty(cell, "Formula")?.ToString()
+                            : null;
+                    }
+                    finally
+                    {
+                        ComDispatch.ReleaseIfComObject(cell);
+                    }
+                }
+            }
+
+            return formulas;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(cells);
+            ComDispatch.ReleaseIfComObject(columns);
+            ComDispatch.ReleaseIfComObject(rows);
+        }
+    }
+
     private static int GetElementCount(Array values)
     {
         var count = 1;
@@ -1312,7 +1430,7 @@ in
         return count;
     }
 
-    private static object? FirstValue(object?[,] values) =>
+    private static T? FirstValue<T>(T?[,] values) =>
         values[values.GetLowerBound(0), values.GetLowerBound(1)];
 
     private IEnumerable<TableSummary> EnumerateTables()

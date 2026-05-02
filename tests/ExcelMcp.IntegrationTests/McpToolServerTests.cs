@@ -66,6 +66,9 @@ public sealed class McpToolServerTests
                 ToolNames.TableDelete,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
+                ToolNames.RangeGetFormulas,
+                ToolNames.RangeSetFormulas,
+                ToolNames.RangeClear,
                 ToolNames.SessionGrantMutationPermission,
                 ToolNames.SessionRevokeMutationPermission,
                 ToolNames.SessionGetMutationPermission,
@@ -811,6 +814,148 @@ public sealed class McpToolServerTests
 
         Assert.True(result.IsError);
         Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeGetFormulas_ReturnsStructuredValues()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeGetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet1",
+                address = "A1:B1"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Equal("A1:B1", result.StructuredContent.GetProperty("address").GetString());
+        Assert.Equal("=1+1", result.StructuredContent.GetProperty("formulas")[0][0].GetString());
+        Assert.Equal(JsonValueKind.Null, result.StructuredContent.GetProperty("formulas")[0][1].ValueKind);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1:B1", formulas = new string?[][] { new string?[] { "=1+1", "=2+2" } } }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(1, result.StructuredContent.GetProperty("writeCount").GetInt32());
+        Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_UsesConnectionId()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var resolver = new ConnectionAwareResolver(new WorkbookService(new FakeExcelSession { Workbook = fakeWorkbook }));
+        var server = new McpToolServer(resolver);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = "conn-1",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1", formulas = new string?[][] { new string?[] { "=1+1" } } }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.Equal(@"C:\temp\connected.xlsx", resolver.LastResolvedPath);
+        Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeClear_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeClear,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                clears = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1:B2" },
+                    new { sheetName = "Sheet1", address = "C1" }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(2, result.StructuredContent.GetProperty("clearCount").GetInt32());
+        Assert.Equal(2, fakeWorkbook.ClearRangeCalls.Count);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_ReturnsStructuredErrorForMalformedValues()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1:B2", formulas = new object?[][] { new object?[] { "=1+1" }, new object?[] { "=2+2", "=3+3" } } }
+                }
+            }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_MapsStructuredSafetyFailure()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var fakeSession = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var server = new McpToolServer(new WorkbookService(fakeSession, new WorkbookOperationSafety(fakeSession, approvalRegistry)));
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new { sheetName = "Sheet1", address = "A1", formulas = new string?[][] { new string?[] { "=1+1" } } }
+                }
+            }));
+
+        Assert.True(result.IsError);
+        Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("shared_session_approval_required", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]

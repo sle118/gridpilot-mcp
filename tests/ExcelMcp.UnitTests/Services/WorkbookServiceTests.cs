@@ -1002,6 +1002,25 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task ReadRangeFormulasAsync_ReturnsFormulaAndNullMatrix()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeFormulasAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "=1+1", null }, { "=A1*2", null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.ReadRangeFormulasAsync(@"C:\temp\book.xlsx", "Sheet1", "A1:B2");
+
+        Assert.Equal("Sheet1", result.SheetName);
+        Assert.Equal("A1:B2", result.Address);
+        Assert.Equal("=1+1", result.Formulas[0][0]);
+        Assert.Null(result.Formulas[0][1]);
+        Assert.Equal("=A1*2", result.Formulas[1][0]);
+    }
+
+    [Fact]
     public async Task WriteRangesAsync_SavesWorkbookOnSuccess()
     {
         var fakeWorkbook = new FakeWorkbookHandle
@@ -1021,6 +1040,28 @@ public sealed class WorkbookServiceTests
         Assert.True(result.Succeeded);
         Assert.Equal(2, result.WriteCount);
         Assert.Equal(2, fakeWorkbook.WriteRangeCalls.Count);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormulasAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null, null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormulaWriteRequest(
+        [
+            new RangeFormulaWriteTarget("Sheet1", "A1:B1", new string?[,] { { "=1+1", "=2+2" } })
+        ]);
+
+        var result = await sut.WriteRangeFormulasAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.WriteCount);
+        Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
     }
 
@@ -1047,6 +1088,28 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task WriteRangeFormulasAsync_RequiresApprovalInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }))
+        };
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+        var request = new RangeFormulaWriteRequest([new RangeFormulaWriteTarget("Sheet1", "A1", new string?[,] { { "=1+1" } })]);
+
+        var result = await sut.WriteRangeFormulasAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormulaCalls);
+    }
+
+    [Fact]
     public async Task WriteRangesAsync_AllowsAttachedMutationWithApproval()
     {
         var fakeWorkbook = new FakeWorkbookHandle
@@ -1068,6 +1131,64 @@ public sealed class WorkbookServiceTests
         Assert.True(result.Succeeded);
         Assert.Single(fakeWorkbook.WriteRangeCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task ClearRangesAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeClearRequest(
+        [
+            new RangeClearTarget("Sheet1", "A1:B2"),
+            new RangeClearTarget("Sheet1", "C1")
+        ]);
+
+        var result = await sut.ClearRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.ClearCount);
+        Assert.Equal(2, fakeWorkbook.ClearRangeCalls.Count);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormulasAsync_RejectsBlankFormulaCells()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormulaWriteRequest([new RangeFormulaWriteTarget("Sheet1", "A1", new string?[,] { { " " } })]);
+
+        var result = await sut.WriteRangeFormulasAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_formula_write_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormulaCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormulasAsync_FailsPreflightWithoutApplyingAnyWrites()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeAsync = (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null, null } }))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormulaWriteRequest([new RangeFormulaWriteTarget("Sheet1", "A1:B1", new string?[,] { { "=1+1" } })]);
+
+        var result = await sut.WriteRangeFormulasAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_formula_write_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormulaCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
     }
 
     [Fact]
@@ -1135,7 +1256,10 @@ public sealed class WorkbookServiceTests
         public Task DeleteTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
+        public Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "=1+1" } }));
         public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { null } }));
         public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

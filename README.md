@@ -22,6 +22,30 @@ GridPilot MCP will provide a local C# MCP bridge over a live desktop Excel insta
 - `src/`: starter implementation projects, currently under provisional `ExcelMcp.*` names
 - `tests/`: unit, integration, and optional live Excel tests
 
+## Capabilities
+
+| Capability | Status | What it covers now | Planned expansion |
+| --- | --- | --- | --- |
+| Session and workbook connection management | ✓ Implemented | lazy MCP startup, open-workbook discovery, connect, create workbook, list/get/disconnect connections, connection-bound routing | richer coordination for concurrent human + agent workflows |
+| Workbook inventory and diagnostics | ✓ Implemented | sheets, tables, queries, connections, runtime logging, targeted workbook diagnostics | deeper dependency inspection and richer workbook health reporting |
+| Workbook persistence | ✓ Implemented | save in place and save as with connection retargeting | close/reopen and broader workbook lifecycle orchestration |
+| Worksheet lifecycle | ✓ Implemented | create, rename, and delete non-last worksheets | move/copy, visibility, ordering, and sheet layout orchestration |
+| Range value read/write | ✓ Implemented | rectangular range read and multi-range value write | richer typed payloads, import/export helpers, and patch-oriented workflows |
+| Range formula operations | ✓ Implemented | read formulas, write formulas, and preserve non-formula cells as `null` in formula reads | targeted recalculation and formula/error inspection |
+| Range clear operations | ✓ Implemented | clear contents only for one or more ranges | broader worksheet hygiene and optional richer clear modes if ever needed |
+| Workbook and worksheet names | ✓ Implemented | list, resolve, read, create, update, and delete names | deeper named-structure diagnostics and bulk maintenance |
+| Query read / refresh / probe / cleanup | ✓ Implemented | query definition read, targeted refresh, diagnostic probe, temp-query cleanup, query formula edit | finer refresh control and more dependency-aware diagnostics |
+| Query lifecycle | Future | not implemented yet | create, delete, rename, and connection/query dependency operations |
+| Table read / detail / mutation | ✓ Implemented | read/detail, create, resize, append, replace, delete, and core options updates | richer schema operations and more table-aware workflows |
+| Workbook structure orchestration | Partial | worksheet lifecycle and workbook create/save/save-as are implemented | workbook choreography beyond current sheet lifecycle, visibility, layout, and copy/move operations |
+| Formatting and presentation controls | Future | not implemented yet | number formats, autofit, wrapping, alignment, and report-polish operations |
+| Data validation and conditional formatting | Future | not implemented yet | inspect and manage validation rules, conditional formatting, and overwrite-safety signals |
+| Charts and shapes | Future | not implemented yet | inspect and manipulate charts, images, drawing shapes, and related presentation objects |
+| Pivot tables and slicers | Future | not implemented yet | inspect and manipulate pivots, caches, timelines, and slicers |
+| Import / export workflows | Future | not implemented yet | CSV/JSON export, import helpers, snapshots, and rollback-friendly interchange workflows |
+| Workbook protection / visibility / layout | Future | not implemented yet | workbook/worksheet protection, visibility, window/layout, and related structural controls |
+| VBA project manipulation | Future | not implemented yet | inspect and edit VBA projects/modules so agents can generate small repetitive scripts or workbook-side functionality when useful |
+
 ## MCP launch and discovery
 
 GridPilot MCP is a console MCP host that is meant to be launched by an MCP client over `stdio`. It is not designed for automatic network discovery or as a long-running HTTP service. In practice, a client such as Codex launches the host process, then negotiates tools over MCP using the process pipes.

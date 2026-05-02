@@ -64,6 +64,58 @@ public sealed class LiveWorkbookEditTests
     }
 
     [LiveExcelFact]
+    public async Task RangeFormulasAndClear_PersistAndPreserveFormatting()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        const string sheetName = "tbleWithErrorRemovedLoaded";
+
+        var seed = await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, "Y1:Z2", new object?[,]
+                {
+                    { 1d, 2d },
+                    { 3d, 4d }
+                })
+            ]));
+        Assert.True(seed.Succeeded);
+
+        await using var workbook = await context.OpenWorkbookAsync();
+        var beforeClear = await workbook.ReadRangeAsync("Y1:Z2", sheetName);
+        var beforeAddress = beforeClear.Address;
+
+        var write = await context.WorkbookService.WriteRangeFormulasAsync(
+            context.WorkbookPath,
+            new RangeFormulaWriteRequest(
+            [
+                new RangeFormulaWriteTarget(sheetName, "Y1:Z2", new string?[,]
+                {
+                    { "=1+1", "=2+2" },
+                    { "=3+3", "=4+4" }
+                })
+            ]));
+        Assert.True(write.Succeeded);
+
+        var formulas = await context.WorkbookService.ReadRangeFormulasAsync(context.WorkbookPath, sheetName, "Y1:Z2");
+        Assert.Equal("=1+1", formulas.Formulas[0][0]);
+        Assert.Equal("=4+4", formulas.Formulas[1][1]);
+
+        var cleared = await context.WorkbookService.ClearRangesAsync(
+            context.WorkbookPath,
+            new RangeClearRequest([new RangeClearTarget(sheetName, "Y1:Z2")]));
+        Assert.True(cleared.Succeeded);
+
+        var afterValues = await workbook.ReadRangeAsync("Y1:Z2", sheetName);
+        var afterFormulas = await context.WorkbookService.ReadRangeFormulasAsync(context.WorkbookPath, sheetName, "Y1:Z2");
+        Assert.Equal(beforeAddress, afterValues.Address);
+        Assert.Null(afterValues.Values[1, 1]);
+        Assert.Null(afterValues.Values[2, 2]);
+        Assert.Null(afterFormulas.Formulas[0][0]);
+        Assert.Null(afterFormulas.Formulas[1][1]);
+    }
+
+    [LiveExcelFact]
     public async Task NameLifecycle_PersistsCreateUpdateAndDelete()
     {
         await using var context = await LiveExcelTestContext.CreateAsync();

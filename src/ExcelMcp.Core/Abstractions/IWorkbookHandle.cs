@@ -39,6 +39,9 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task SetTableOptionsAsync(TableOptionsUpdateRequest request, CancellationToken cancellationToken = default);
 
     Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
     Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
     Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
 }

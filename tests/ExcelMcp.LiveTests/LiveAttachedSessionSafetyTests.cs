@@ -206,6 +206,43 @@ public sealed class LiveAttachedSessionSafetyTests
     }
 
     [AttachedLiveExcelFact]
+    public async Task AttachedSession_RangeFormulaWriteAndClear_FailBeforeApproval_AndSucceedAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        const string sheetName = "tbleWithErrorRemovedLoaded";
+
+        var formulaRequest = new RangeFormulaWriteRequest(
+        [
+            new RangeFormulaWriteTarget(sheetName, "Y5:Z5", new string?[,] { { "=1+1", "=2+2" } })
+        ]);
+
+        var blockedWrite = await context.WorkbookService.WriteRangeFormulasAsync(context.WorkbookPath, formulaRequest);
+        Assert.False(blockedWrite.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedWrite.Error?.Code);
+
+        var clearRequest = new RangeClearRequest([new RangeClearTarget(sheetName, "Y5:Z5")]);
+        var blockedClear = await context.WorkbookService.ClearRangesAsync(context.WorkbookPath, clearRequest);
+        Assert.False(blockedClear.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedClear.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var written = await context.WorkbookService.WriteRangeFormulasAsync(context.WorkbookPath, formulaRequest);
+        Assert.True(written.Succeeded);
+
+        var formulas = await context.WorkbookService.ReadRangeFormulasAsync(context.WorkbookPath, sheetName, "Y5:Z5");
+        Assert.Equal("=1+1", formulas.Formulas[0][0]);
+        Assert.Equal("=2+2", formulas.Formulas[0][1]);
+
+        var cleared = await context.WorkbookService.ClearRangesAsync(context.WorkbookPath, clearRequest);
+        Assert.True(cleared.Succeeded);
+
+        var clearedFormulas = await context.WorkbookService.ReadRangeFormulasAsync(context.WorkbookPath, sheetName, "Y5:Z5");
+        Assert.Null(clearedFormulas.Formulas[0][0]);
+        Assert.Null(clearedFormulas.Formulas[0][1]);
+    }
+
+    [AttachedLiveExcelFact]
     public async Task AttachedSession_NameCreate_FailsBeforeApproval_AndSucceedsAfterApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();

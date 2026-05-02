@@ -307,6 +307,52 @@ public sealed class McpToolServer
                     }
                 }))),
         new(
+            ToolNames.RangeGetFormulas,
+            "Read formulas from one rectangular workbook range, returning null for non-formula cells.",
+            BuildTargetSchema(
+                ["sheetName", "address"],
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
+        new(
+            ToolNames.RangeSetFormulas,
+            "Write one or more rectangular workbook formula ranges.",
+            BuildTargetSchema(
+                ["writes"],
+                ("writes", new
+                {
+                    type = "array",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            sheetName = new { type = "string" },
+                            address = new { type = "string" },
+                            formulas = new { type = "array", items = new { type = "array" } }
+                        },
+                        required = new[] { "sheetName", "address", "formulas" }
+                    }
+                }))),
+        new(
+            ToolNames.RangeClear,
+            "Clear contents from one or more workbook ranges while preserving formatting and layout.",
+            BuildTargetSchema(
+                ["clears"],
+                ("clears", new
+                {
+                    type = "array",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            sheetName = new { type = "string" },
+                            address = new { type = "string" }
+                        },
+                        required = new[] { "sheetName", "address" }
+                    }
+                }))),
+        new(
             ToolNames.SessionGrantMutationPermission,
             "Grant workbook-scoped or session-scoped mutation permission for the current GridPilot host session.",
             ToJsonElement(new
@@ -494,6 +540,9 @@ public sealed class McpToolServer
             ToolNames.TableDelete => HandleTableDeleteAsync(arguments, cancellationToken),
             ToolNames.RangeRead => HandleRangeReadAsync(arguments, cancellationToken),
             ToolNames.RangeWrite => HandleRangeWriteAsync(arguments, cancellationToken),
+            ToolNames.RangeGetFormulas => HandleRangeGetFormulasAsync(arguments, cancellationToken),
+            ToolNames.RangeSetFormulas => HandleRangeSetFormulasAsync(arguments, cancellationToken),
+            ToolNames.RangeClear => HandleRangeClearAsync(arguments, cancellationToken),
             ToolNames.SessionGrantMutationPermission => HandleGrantMutationPermissionAsync(arguments, cancellationToken),
             ToolNames.SessionRevokeMutationPermission => HandleRevokeMutationPermissionAsync(arguments, cancellationToken),
             ToolNames.SessionGetMutationPermission => HandleGetMutationPermissionAsync(arguments, cancellationToken),
@@ -835,6 +884,37 @@ public sealed class McpToolServer
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<object> HandleRangeGetFormulasAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        var address = GetRequiredString(arguments, "address");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.ReadRangeFormulasAsync(resolved.WorkbookPath, sheetName, address, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleRangeSetFormulasAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetRangeFormulaWriteRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.WriteRangeFormulasAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleRangeClearAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetRangeClearRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.ClearRangesAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private Task<object> HandleGrantApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -1016,6 +1096,71 @@ public sealed class McpToolServer
         return new RangeWriteRequest(writes);
     }
 
+    private static RangeFormulaWriteRequest GetRangeFormulaWriteRequest(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("writes", out var writesElement) ||
+            writesElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "Missing required array argument 'writes'.");
+        }
+
+        var writes = new List<RangeFormulaWriteTarget>();
+        foreach (var write in writesElement.EnumerateArray())
+        {
+            if (write.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each 'writes' item must be an object.");
+            }
+
+            var sheetName = GetRequiredString(write, "sheetName");
+            var address = GetRequiredString(write, "address");
+            if (!write.TryGetProperty("formulas", out var formulasElement))
+            {
+                throw new McpToolInputException("invalid_arguments", "Each range formula write must include 'formulas'.");
+            }
+
+            writes.Add(new RangeFormulaWriteTarget(sheetName, address, ParseStringMatrix(formulasElement)));
+        }
+
+        if (writes.Count == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one range formula write target is required.");
+        }
+
+        return new RangeFormulaWriteRequest(writes);
+    }
+
+    private static RangeClearRequest GetRangeClearRequest(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("clears", out var clearsElement) ||
+            clearsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "Missing required array argument 'clears'.");
+        }
+
+        var clears = new List<RangeClearTarget>();
+        foreach (var clear in clearsElement.EnumerateArray())
+        {
+            if (clear.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each 'clears' item must be an object.");
+            }
+
+            clears.Add(new RangeClearTarget(
+                GetRequiredString(clear, "sheetName"),
+                GetRequiredString(clear, "address")));
+        }
+
+        if (clears.Count == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one range clear target is required.");
+        }
+
+        return new RangeClearRequest(clears);
+    }
+
     private static object?[,] ParseMatrix(JsonElement valuesElement)
     {
         if (valuesElement.ValueKind != JsonValueKind.Array)
@@ -1058,6 +1203,48 @@ public sealed class McpToolServer
         return matrix;
     }
 
+    private static string?[,] ParseStringMatrix(JsonElement valuesElement)
+    {
+        if (valuesElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "'formulas' must be a rectangular array of arrays.");
+        }
+
+        var rows = valuesElement.EnumerateArray().ToArray();
+        if (rows.Length == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "'formulas' must contain at least one row.");
+        }
+
+        if (rows.Any(row => row.ValueKind != JsonValueKind.Array))
+        {
+            throw new McpToolInputException("invalid_arguments", "'formulas' must be a rectangular array of arrays.");
+        }
+
+        var columnCount = rows[0].GetArrayLength();
+        if (columnCount == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "'formulas' rows must contain at least one column.");
+        }
+
+        if (rows.Any(row => row.GetArrayLength() != columnCount))
+        {
+            throw new McpToolInputException("invalid_arguments", "'formulas' must be rectangular.");
+        }
+
+        var matrix = new string?[rows.Length, columnCount];
+        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        {
+            var cells = rows[rowIndex].EnumerateArray().ToArray();
+            for (var columnIndex = 0; columnIndex < columnCount; columnIndex++)
+            {
+                matrix[rowIndex, columnIndex] = ParseFormulaValue(cells[columnIndex]);
+            }
+        }
+
+        return matrix;
+    }
+
     private static object?[,] GetRequiredMatrix(JsonElement element, string propertyName)
     {
         if (element.ValueKind == JsonValueKind.Object &&
@@ -1079,6 +1266,14 @@ public sealed class McpToolServer
             JsonValueKind.Number when element.TryGetInt64(out var intValue) => intValue,
             JsonValueKind.Number => element.GetDouble(),
             _ => throw new McpToolInputException("invalid_arguments", "Range write cell values must be scalars or null.")
+        };
+
+    private static string? ParseFormulaValue(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String => element.GetString(),
+            _ => throw new McpToolInputException("invalid_arguments", "Range formula cells must be strings or null.")
         };
 
     private static async Task<object> ExecuteAsObjectAsync<T>(Task<T> task) =>

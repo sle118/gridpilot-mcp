@@ -35,6 +35,9 @@ public static class ToolNames
     public const string TableSetOptions = "table_set_options";
     public const string RangeRead = "range_read";
     public const string RangeWrite = "range_write";
+    public const string RangeGetFormulas = "range_get_formulas";
+    public const string RangeSetFormulas = "range_set_formulas";
+    public const string RangeClear = "range_clear";
     public const string SessionGrantMutationPermission = "session_grant_mutation_permission";
     public const string SessionRevokeMutationPermission = "session_revoke_mutation_permission";
     public const string SessionGetMutationPermission = "session_get_mutation_permission";

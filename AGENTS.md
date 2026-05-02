@@ -31,6 +31,7 @@ The starter implementation projects still use provisional `ExcelMcp.*` assembly 
 - Put focused technical analysis in `docs/topics/`
 - Put chronological session notes in `docs/worklog/`
 - Update handoff docs when project direction or priorities materially change
+- Keep the README capabilities table current whenever a surface is implemented, materially expanded, or newly recognized as a future COM-capable family
 - Keep narrative below the surface; default entry points must stay concise
 
 ## Coding rules
