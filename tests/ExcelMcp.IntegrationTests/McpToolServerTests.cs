@@ -69,6 +69,8 @@ public sealed class McpToolServerTests
                 ToolNames.RangeGetFormulas,
                 ToolNames.RangeSetFormulas,
                 ToolNames.RangeClear,
+                ToolNames.CalculationRecalculate,
+                ToolNames.CalculationInspectErrors,
                 ToolNames.SessionGrantMutationPermission,
                 ToolNames.SessionRevokeMutationPermission,
                 ToolNames.SessionGetMutationPermission,
@@ -886,6 +888,44 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_PreservesVerticalSingleColumnMatrix()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "B20:B22",
+                        formulas = new string?[][]
+                        {
+                            new string?[] { "=RAND()" },
+                            new string?[] { "=RAND()" },
+                            new string?[] { "=RAND()" }
+                        }
+                    }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        var call = Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
+        Assert.Equal("Sheet1", call.SheetName);
+        Assert.Equal("B20:B22", call.Address);
+        Assert.Equal(3, call.Formulas.GetLength(0));
+        Assert.Equal(1, call.Formulas.GetLength(1));
+        Assert.Equal("=RAND()", call.Formulas[0, 0]);
+        Assert.Equal("=RAND()", call.Formulas[1, 0]);
+        Assert.Equal("=RAND()", call.Formulas[2, 0]);
+    }
+
+    [Fact]
     public async Task CallToolAsync_RangeClear_ReturnsStructuredSuccess()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -911,6 +951,53 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_CalculationRecalculate_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.CalculationRecalculate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                scope = "range",
+                sheetName = "Sheet1",
+                address = "A1:B2"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("range", result.StructuredContent.GetProperty("scope").GetString());
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Equal("A1:B2", result.StructuredContent.GetProperty("address").GetString());
+        Assert.Single(fakeWorkbook.RecalculationCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_CalculationInspectErrors_ReturnsStructuredHits()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.CalculationInspectErrors,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                scope = "worksheet",
+                sheetName = "Sheet1"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(1, result.StructuredContent.GetProperty("hitCount").GetInt32());
+        Assert.Equal("formula_error", result.StructuredContent.GetProperty("hits")[0].GetProperty("valueKind").GetString());
+        Assert.Single(fakeWorkbook.ErrorInspectionCalls);
+    }
+
+    [Fact]
     public async Task CallToolAsync_RangeSetFormulas_ReturnsStructuredErrorForMalformedValues()
     {
         var server = CreateServer();
@@ -928,6 +1015,48 @@ public sealed class McpToolServerTests
 
         Assert.True(result.IsError);
         Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_CalculationInspectErrors_ReturnsStructuredErrorForMissingWorksheetName()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.CalculationInspectErrors,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                scope = "worksheet"
+            }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_CalculationRecalculate_MapsStructuredSafetyFailure()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var fakeSession = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var server = new McpToolServer(new WorkbookService(fakeSession, new WorkbookOperationSafety(fakeSession, approvalRegistry)));
+
+        var result = await server.CallToolAsync(
+            ToolNames.CalculationRecalculate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                scope = "workbook"
+            }));
+
+        Assert.True(result.IsError);
+        Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("shared_session_approval_required", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]

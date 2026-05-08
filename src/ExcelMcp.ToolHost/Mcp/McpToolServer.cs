@@ -353,6 +353,22 @@ public sealed class McpToolServer
                     }
                 }))),
         new(
+            ToolNames.CalculationRecalculate,
+            "Recalculate workbook, worksheet, or range targets without implicitly saving the workbook.",
+            BuildTargetSchema(
+                ["scope"],
+                ("scope", new { type = "string" }),
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
+        new(
+            ToolNames.CalculationInspectErrors,
+            "Inspect formula and cell error state for workbook, worksheet, or range targets.",
+            BuildTargetSchema(
+                ["scope"],
+                ("scope", new { type = "string" }),
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
+        new(
             ToolNames.SessionGrantMutationPermission,
             "Grant workbook-scoped or session-scoped mutation permission for the current GridPilot host session.",
             ToJsonElement(new
@@ -543,6 +559,8 @@ public sealed class McpToolServer
             ToolNames.RangeGetFormulas => HandleRangeGetFormulasAsync(arguments, cancellationToken),
             ToolNames.RangeSetFormulas => HandleRangeSetFormulasAsync(arguments, cancellationToken),
             ToolNames.RangeClear => HandleRangeClearAsync(arguments, cancellationToken),
+            ToolNames.CalculationRecalculate => HandleCalculationRecalculateAsync(arguments, cancellationToken),
+            ToolNames.CalculationInspectErrors => HandleCalculationInspectErrorsAsync(arguments, cancellationToken),
             ToolNames.SessionGrantMutationPermission => HandleGrantMutationPermissionAsync(arguments, cancellationToken),
             ToolNames.SessionRevokeMutationPermission => HandleRevokeMutationPermissionAsync(arguments, cancellationToken),
             ToolNames.SessionGetMutationPermission => HandleGetMutationPermissionAsync(arguments, cancellationToken),
@@ -915,6 +933,26 @@ public sealed class McpToolServer
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<object> HandleCalculationRecalculateAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetCalculationRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.RecalculateAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleCalculationInspectErrorsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetErrorInspectionRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.InspectErrorsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private Task<object> HandleGrantApprovalAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -1159,6 +1197,54 @@ public sealed class McpToolServer
         }
 
         return new RangeClearRequest(clears);
+    }
+
+    private static CalculationRequest GetCalculationRequest(JsonElement element)
+    {
+        var scope = GetRequiredString(element, "scope");
+        var sheetName = GetOptionalString(element, "sheetName");
+        var address = GetOptionalString(element, "address");
+        ValidateScopedTargetArguments(scope, sheetName, address);
+        return new CalculationRequest(scope, sheetName, address);
+    }
+
+    private static ErrorInspectionRequest GetErrorInspectionRequest(JsonElement element)
+    {
+        var scope = GetRequiredString(element, "scope");
+        var sheetName = GetOptionalString(element, "sheetName");
+        var address = GetOptionalString(element, "address");
+        ValidateScopedTargetArguments(scope, sheetName, address);
+        return new ErrorInspectionRequest(scope, sheetName, address);
+    }
+
+    private static void ValidateScopedTargetArguments(string scope, string? sheetName, string? address)
+    {
+        switch (scope.Trim().ToLowerInvariant())
+        {
+            case "workbook":
+                return;
+            case "worksheet":
+                if (string.IsNullOrWhiteSpace(sheetName))
+                {
+                    throw new McpToolInputException("invalid_arguments", "Worksheet scope requires 'sheetName'.");
+                }
+
+                return;
+            case "range":
+                if (string.IsNullOrWhiteSpace(sheetName))
+                {
+                    throw new McpToolInputException("invalid_arguments", "Range scope requires 'sheetName'.");
+                }
+
+                if (string.IsNullOrWhiteSpace(address))
+                {
+                    throw new McpToolInputException("invalid_arguments", "Range scope requires 'address'.");
+                }
+
+                return;
+            default:
+                throw new McpToolInputException("invalid_arguments", "Scope must be one of 'workbook', 'worksheet', or 'range'.");
+        }
     }
 
     private static object?[,] ParseMatrix(JsonElement valuesElement)

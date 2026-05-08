@@ -31,8 +31,9 @@ GridPilot MCP will provide a local C# MCP bridge over a live desktop Excel insta
 | Workbook persistence | ✓ Implemented | save in place and save as with connection retargeting | close/reopen and broader workbook lifecycle orchestration |
 | Worksheet lifecycle | ✓ Implemented | create, rename, and delete non-last worksheets | move/copy, visibility, ordering, and sheet layout orchestration |
 | Range value read/write | ✓ Implemented | rectangular range read and multi-range value write | richer typed payloads, import/export helpers, and patch-oriented workflows |
-| Range formula operations | ✓ Implemented | read formulas, write formulas, and preserve non-formula cells as `null` in formula reads | targeted recalculation and formula/error inspection |
+| Range formula operations | ✓ Implemented | read formulas, write formulas, and preserve non-formula cells as `null` in formula reads | richer formula helpers and patch-oriented workflows layered on top |
 | Range clear operations | ✓ Implemented | clear contents only for one or more ranges | broader worksheet hygiene and optional richer clear modes if ever needed |
+| Calculation and error diagnostics | ✓ Implemented | workbook/worksheet/range recalculation plus compact inspection hit lists for healthy formulas, formula errors, and literal error cells | richer calculation-state diagnostics and broader troubleshooting helpers |
 | Workbook and worksheet names | ✓ Implemented | list, resolve, read, create, update, and delete names | deeper named-structure diagnostics and bulk maintenance |
 | Query read / refresh / probe / cleanup | ✓ Implemented | query definition read, targeted refresh, diagnostic probe, temp-query cleanup, query formula edit | finer refresh control and more dependency-aware diagnostics |
 | Query lifecycle | Future | not implemented yet | create, delete, rename, and connection/query dependency operations |
@@ -168,7 +169,7 @@ The branding overlay is meant to rewrite the human-facing files after the earlie
 
 ## Near-term priorities
 
-1. lock the first MCP tool contract
-2. implement session-state scoping and workbook/query inventory abstractions
-3. add mock-first tests for orchestration behavior
-4. add optional local-only live Excel validation harness
+1. expand the next workbook edit families beyond the formula/calculation baseline, especially formatting and broader worksheet/workbook structure operations
+2. improve attached-session unsafe-UI detection before widening live-workbook mutation further
+3. decide whether mutation approval should evolve into a stronger coordination model for concurrent human and agent editing
+4. keep packaging the remaining workbook-surface roadmap into small, mock-first slices with opt-in live validation

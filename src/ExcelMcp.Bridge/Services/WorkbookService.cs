@@ -2,6 +2,7 @@ using ExcelMcp.Core;
 using ExcelMcp.Core.Abstractions;
 using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
+using System.Diagnostics;
 
 namespace ExcelMcp.Bridge.Services;
 
@@ -464,7 +465,7 @@ public sealed class WorkbookService
             ["workbookPath"] = workbookPath,
             ["pattern"] = pattern,
             ["deletedCount"] = result.DeletedCount,
-            ["failedCount"] = result.FailedNames.Count
+            ["failedCount"] = result.FailedNames?.Count ?? 0
         });
         return result;
     }
@@ -552,6 +553,123 @@ public sealed class WorkbookService
             range.SheetName,
             range.Address,
             ConvertValues(range.Values));
+    }
+
+    public async Task<RecalculationResult> RecalculateAsync(
+        string workbookPath,
+        CalculationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var target = ValidateScopedTarget(request.Scope, request.SheetName, request.Address, "recalculation", out var validationError);
+        if (validationError is not null)
+        {
+            return new RecalculationResult(
+                false,
+                workbookPath,
+                NormalizeScopeOrDefault(request.Scope),
+                NormalizeOptional(request.SheetName),
+                NormalizeOptional(request.Address),
+                TimeSpan.Zero,
+                validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new RecalculationResult(false, workbookPath, target!.Scope, target.SheetName, target.Address, TimeSpan.Zero, safetyError);
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            _logger.LogInfo(nameof(WorkbookService), "recalculation_started", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["scope"] = target!.Scope,
+                ["sheetName"] = target.SheetName,
+                ["address"] = target.Address
+            });
+
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.RecalculateAsync(new CalculationRequest(target.Scope, target.SheetName, target.Address), cancellationToken);
+            stopwatch.Stop();
+
+            _logger.LogInfo(nameof(WorkbookService), "recalculation_completed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["scope"] = target.Scope,
+                ["sheetName"] = target.SheetName,
+                ["address"] = target.Address,
+                ["durationMs"] = stopwatch.Elapsed.TotalMilliseconds
+            });
+
+            return new RecalculationResult(true, workbookPath, target.Scope, target.SheetName, target.Address, stopwatch.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            _logger.LogInfo(nameof(WorkbookService), "recalculation_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["scope"] = target!.Scope,
+                ["sheetName"] = target.SheetName,
+                ["address"] = target.Address
+            }, ex);
+            return BuildRecalculationError(workbookPath, target.Scope, target.SheetName, target.Address, stopwatch.Elapsed, ex);
+        }
+    }
+
+    public async Task<ErrorInspectionResult> InspectErrorsAsync(
+        string workbookPath,
+        ErrorInspectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var target = ValidateScopedTarget(request.Scope, request.SheetName, request.Address, "error_inspection", out var validationError);
+        if (validationError is not null)
+        {
+            return new ErrorInspectionResult(
+                false,
+                workbookPath,
+                NormalizeScopeOrDefault(request.Scope),
+                NormalizeOptional(request.SheetName),
+                NormalizeOptional(request.Address),
+                0,
+                Array.Empty<ErrorInspectionHit>(),
+                validationError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            var hits = await workbook.InspectErrorsAsync(new ErrorInspectionRequest(target!.Scope, target.SheetName, target.Address), cancellationToken);
+
+            _logger.LogInfo(nameof(WorkbookService), "error_inspection_completed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["scope"] = target.Scope,
+                ["sheetName"] = target.SheetName,
+                ["address"] = target.Address,
+                ["hitCount"] = hits.Count
+            });
+
+            return new ErrorInspectionResult(true, workbookPath, target.Scope, target.SheetName, target.Address, hits.Count, hits);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "error_inspection_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["scope"] = target!.Scope,
+                ["sheetName"] = target.SheetName,
+                ["address"] = target.Address
+            }, ex);
+            return BuildErrorInspectionError(workbookPath, target.Scope, target.SheetName, target.Address, ex);
+        }
     }
 
     public async Task<TableReadResult> ReadTableAsync(
@@ -1071,6 +1189,80 @@ public sealed class WorkbookService
         return rows;
     }
 
+    private static ScopedTarget? ValidateScopedTarget(
+        string scope,
+        string? sheetName,
+        string? address,
+        string operation,
+        out OperationError? error)
+    {
+        var normalizedScope = NormalizeScope(scope);
+        var normalizedSheetName = NormalizeOptional(sheetName);
+        var normalizedAddress = NormalizeOptional(address);
+
+        if (normalizedScope is null)
+        {
+            error = new OperationError(
+                Code: $"{operation}_target_invalid",
+                Message: $"Invalid target scope for {operation.Replace('_', ' ')}.",
+                Detail: "Use scope 'workbook', 'worksheet', or 'range'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (normalizedScope == "worksheet" && normalizedSheetName is null)
+        {
+            error = new OperationError(
+                Code: $"{operation}_target_invalid",
+                Message: $"Invalid target scope for {operation.Replace('_', ' ')}.",
+                Detail: "A worksheet-scoped target requires 'sheetName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (normalizedScope == "range" && normalizedSheetName is null)
+        {
+            error = new OperationError(
+                Code: $"{operation}_target_invalid",
+                Message: $"Invalid target scope for {operation.Replace('_', ' ')}.",
+                Detail: "A range-scoped target requires 'sheetName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (normalizedScope == "range" && normalizedAddress is null)
+        {
+            error = new OperationError(
+                Code: $"{operation}_target_invalid",
+                Message: $"Invalid target scope for {operation.Replace('_', ' ')}.",
+                Detail: "A range-scoped target requires 'address'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return normalizedScope switch
+        {
+            "workbook" => new ScopedTarget(normalizedScope, null, null),
+            "worksheet" => new ScopedTarget(normalizedScope, normalizedSheetName, null),
+            _ => new ScopedTarget(normalizedScope, normalizedSheetName, normalizedAddress)
+        };
+    }
+
+    private static string NormalizeScopeOrDefault(string? scope) =>
+        NormalizeScope(scope) ?? NormalizeOptional(scope) ?? string.Empty;
+
+    private static string? NormalizeScope(string? scope)
+    {
+        var normalized = NormalizeOptional(scope)?.ToLowerInvariant();
+        return normalized is "workbook" or "worksheet" or "range"
+            ? normalized
+            : null;
+    }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string GetScope(string? sheetName) =>
         string.IsNullOrWhiteSpace(sheetName) ? "Workbook" : "Worksheet";
 
@@ -1092,6 +1284,46 @@ public sealed class WorkbookService
             new OperationError(
                 Code: $"name_{action}_failed",
                 Message: $"Failed to {action} name '{name}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static RecalculationResult BuildRecalculationError(
+        string workbookPath,
+        string scope,
+        string? sheetName,
+        string? address,
+        TimeSpan duration,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            scope,
+            sheetName,
+            address,
+            duration,
+            new OperationError(
+                Code: "recalculation_failed",
+                Message: "Failed to recalculate the targeted workbook scope.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static ErrorInspectionResult BuildErrorInspectionError(
+        string workbookPath,
+        string scope,
+        string? sheetName,
+        string? address,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            scope,
+            sheetName,
+            address,
+            0,
+            Array.Empty<ErrorInspectionHit>(),
+            new OperationError(
+                Code: "error_inspection_failed",
+                Message: "Failed to inspect workbook error state for the targeted scope.",
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
 
@@ -1156,4 +1388,6 @@ public sealed class WorkbookService
                 Message: $"Failed to {action.Replace('_', ' ')} for table '{tableName}'.",
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
+
+    private sealed record ScopedTarget(string Scope, string? SheetName, string? Address);
 }

@@ -18,6 +18,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address, string?[,] Formulas)> WriteRangeFormulaCalls { get; } = [];
     public List<(string SheetName, string Address)> ClearRangeCalls { get; } = [];
+    public List<CalculationRequest> RecalculationCalls { get; } = [];
+    public List<ErrorInspectionRequest> ErrorInspectionCalls { get; } = [];
 
     public IReadOnlyList<SheetSummary> Sheets { get; set; } = Array.Empty<SheetSummary>();
     public IReadOnlyList<TableSummary> Tables { get; set; } = Array.Empty<TableSummary>();
@@ -111,6 +113,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Func<string, string?, Task> OnClearRangeContentsAsync { get; set; } =
         (address, sheetName) => Task.CompletedTask;
+
+    public Func<CalculationRequest, Task> OnRecalculateAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<ErrorInspectionRequest, Task<IReadOnlyList<ErrorInspectionHit>>> OnInspectErrorsAsync { get; set; } =
+        _ => Task.FromResult<IReadOnlyList<ErrorInspectionHit>>(Array.Empty<ErrorInspectionHit>());
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task SaveAsync(CancellationToken cancellationToken = default)
@@ -216,6 +224,18 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         UpdatedTableOptions.Add(request);
         return OnSetTableOptionsAsync(request);
+    }
+
+    public Task RecalculateAsync(CalculationRequest request, CancellationToken cancellationToken = default)
+    {
+        RecalculationCalls.Add(request);
+        return OnRecalculateAsync(request);
+    }
+
+    public Task<IReadOnlyList<ErrorInspectionHit>> InspectErrorsAsync(ErrorInspectionRequest request, CancellationToken cancellationToken = default)
+    {
+        ErrorInspectionCalls.Add(request);
+        return OnInspectErrorsAsync(request);
     }
 
     public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)

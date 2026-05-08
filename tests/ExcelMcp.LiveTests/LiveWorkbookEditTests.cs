@@ -116,6 +116,36 @@ public sealed class LiveWorkbookEditTests
     }
 
     [LiveExcelFact]
+    public async Task RangeFormulas_PersistVerticalSingleColumnWrites()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        const string sheetName = "Sheet1";
+
+        var write = await context.WorkbookService.WriteRangeFormulasAsync(
+            context.WorkbookPath,
+            new RangeFormulaWriteRequest(
+            [
+                new RangeFormulaWriteTarget(sheetName, "B20:B22", new string?[,]
+                {
+                    { "=RAND()" },
+                    { "=RAND()" },
+                    { "=RAND()" }
+                })
+            ]));
+        Assert.True(write.Succeeded);
+
+        var formulas = await context.WorkbookService.ReadRangeFormulasAsync(context.WorkbookPath, sheetName, "B20:B22");
+        Assert.Equal("=RAND()", formulas.Formulas[0][0]);
+        Assert.Equal("=RAND()", formulas.Formulas[1][0]);
+        Assert.Equal("=RAND()", formulas.Formulas[2][0]);
+
+        var values = await context.WorkbookService.ReadRangeAsync(context.WorkbookPath, sheetName, "B20:B22");
+        Assert.IsType<double>(values.Values[0][0]);
+        Assert.IsType<double>(values.Values[1][0]);
+        Assert.IsType<double>(values.Values[2][0]);
+    }
+
+    [LiveExcelFact]
     public async Task NameLifecycle_PersistsCreateUpdateAndDelete()
     {
         await using var context = await LiveExcelTestContext.CreateAsync();

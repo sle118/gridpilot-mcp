@@ -860,6 +860,79 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
+    public Task RecalculateAsync(CalculationRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ArgumentNullException.ThrowIfNull(request);
+
+        object? worksheets = null;
+        object? worksheet = null;
+        object? range = null;
+        try
+        {
+            switch (request.Scope.Trim().ToLowerInvariant())
+            {
+                case "workbook":
+                    worksheets = GetCollection(_workbook, "Worksheets");
+                    foreach (var workbookWorksheet in ComDispatch.Enumerate(worksheets))
+                    {
+                        try
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            ComDispatch.InvokeMethod(workbookWorksheet, "Calculate");
+                        }
+                        finally
+                        {
+                            ComDispatch.ReleaseIfComObject(workbookWorksheet);
+                        }
+                    }
+                    break;
+                case "worksheet":
+                    worksheet = GetWorksheet(request.SheetName);
+                    ComDispatch.InvokeMethod(worksheet, "Calculate");
+                    break;
+                case "range":
+                    worksheet = GetWorksheet(request.SheetName);
+                    range = ComDispatch.GetProperty<object>(worksheet, "Range", request.Address);
+                    ComDispatch.InvokeMethod(range, "Calculate");
+                    break;
+                default:
+                    throw new InvalidOperationException($"Calculation scope '{request.Scope}' is not supported.");
+            }
+
+            _logger.LogDebug(nameof(ComWorkbookHandle), "recalculation_completed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = FullPath,
+                ["scope"] = request.Scope,
+                ["sheetName"] = request.SheetName,
+                ["address"] = request.Address
+            });
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+    }
+
+    public Task<IReadOnlyList<ErrorInspectionHit>> InspectErrorsAsync(ErrorInspectionRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Task.FromResult<IReadOnlyList<ErrorInspectionHit>>(request.Scope.Trim().ToLowerInvariant() switch
+        {
+            "workbook" => InspectWorkbookErrors(cancellationToken),
+            "worksheet" => InspectWorksheetErrors(request.SheetName, cancellationToken),
+            "range" => InspectRangeErrors(request.SheetName, request.Address, cancellationToken),
+            _ => throw new InvalidOperationException($"Error inspection scope '{request.Scope}' is not supported.")
+        });
+    }
+
     public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -972,7 +1045,7 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             }
             else
             {
-                ComDispatch.SetProperty(range!, "Formula", formulas);
+                ComDispatch.SetProperty(range!, "Formula", ToComVariantMatrix(formulas));
             }
 
             return Task.CompletedTask;
@@ -1375,6 +1448,23 @@ in
         return singleValue;
     }
 
+    private static object?[,] ToComVariantMatrix(Array values)
+    {
+        var rowCount = values.GetLength(0);
+        var columnCount = values.GetLength(1);
+        var matrix = (object?[,])Array.CreateInstance(typeof(object), [rowCount, columnCount], [1, 1]);
+
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+        {
+            for (var columnIndex = 0; columnIndex < columnCount; columnIndex++)
+            {
+                matrix[rowIndex + 1, columnIndex + 1] = values.GetValue(rowIndex, columnIndex);
+            }
+        }
+
+        return matrix;
+    }
+
     private static object?[,] ReadFormulaMatrix(object range)
     {
         object? rows = null;
@@ -1418,6 +1508,199 @@ in
             ComDispatch.ReleaseIfComObject(rows);
         }
     }
+
+    private IReadOnlyList<ErrorInspectionHit> InspectWorkbookErrors(CancellationToken cancellationToken)
+    {
+        var hits = new List<ErrorInspectionHit>();
+        var worksheets = GetCollection(_workbook, "Worksheets");
+        try
+        {
+            foreach (var worksheet in ComDispatch.Enumerate(worksheets))
+            {
+                object? usedRange = null;
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var sheetName = GetStringProperty(worksheet, "Name");
+                    usedRange = ComDispatch.GetProperty<object>(worksheet, "UsedRange");
+                    hits.AddRange(InspectRangeErrors(usedRange, sheetName, cancellationToken));
+                }
+                finally
+                {
+                    ComDispatch.ReleaseIfComObject(usedRange);
+                    ComDispatch.ReleaseIfComObject(worksheet);
+                }
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+
+        return hits;
+    }
+
+    private IReadOnlyList<ErrorInspectionHit> InspectWorksheetErrors(string? sheetName, CancellationToken cancellationToken)
+    {
+        object? worksheet = null;
+        object? usedRange = null;
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            usedRange = ComDispatch.GetProperty<object>(worksheet, "UsedRange");
+            return InspectRangeErrors(usedRange, GetStringProperty(worksheet, "Name"), cancellationToken);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(usedRange);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private IReadOnlyList<ErrorInspectionHit> InspectRangeErrors(string? sheetName, string? address, CancellationToken cancellationToken)
+    {
+        object? worksheet = null;
+        object? range = null;
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            return InspectRangeErrors(range, GetStringProperty(worksheet, "Name"), cancellationToken);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private static IReadOnlyList<ErrorInspectionHit> InspectRangeErrors(object range, string sheetName, CancellationToken cancellationToken)
+    {
+        object? rows = null;
+        object? columns = null;
+        object? cells = null;
+        try
+        {
+            rows = ComDispatch.GetProperty<object>(range, "Rows");
+            columns = ComDispatch.GetProperty<object>(range, "Columns");
+            cells = GetCollection(range, "Cells");
+            var rowCount = ComDispatch.GetProperty<int>(rows, "Count");
+            var columnCount = ComDispatch.GetProperty<int>(columns, "Count");
+            var hits = new List<ErrorInspectionHit>();
+
+            for (var rowIndex = 1; rowIndex <= rowCount; rowIndex++)
+            {
+                for (var columnIndex = 1; columnIndex <= columnCount; columnIndex++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    object? cell = null;
+                    try
+                    {
+                        cell = ComDispatch.GetProperty<object>(cells, "Item", rowIndex, columnIndex);
+                        var hasFormula = ToBoolean(GetOptionalProperty(cell, "HasFormula"));
+                        var formula = hasFormula ? GetOptionalProperty(cell, "Formula")?.ToString() : null;
+                        var value = GetOptionalProperty(cell, "Value2");
+                        var errorCode = TryGetExcelErrorCode(cell, value);
+
+                        if (!hasFormula && errorCode is null)
+                        {
+                            continue;
+                        }
+
+                        var valueKind = hasFormula
+                            ? errorCode is null ? "healthy_formula" : "formula_error"
+                            : "literal_error";
+
+                        hits.Add(new ErrorInspectionHit(
+                            SheetName: sheetName,
+                            Address: GetOptionalProperty(cell, "Address")?.ToString() ?? string.Empty,
+                            HasFormula: hasFormula,
+                            Formula: formula,
+                            ErrorCode: errorCode,
+                            ValueKind: valueKind));
+                    }
+                    finally
+                    {
+                        ComDispatch.ReleaseIfComObject(cell);
+                    }
+                }
+            }
+
+            return hits;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(cells);
+            ComDispatch.ReleaseIfComObject(columns);
+            ComDispatch.ReleaseIfComObject(rows);
+        }
+    }
+
+    private static string? TryGetExcelErrorCode(object cell, object? value)
+    {
+        if (TryMapExcelErrorValue(value, out var code))
+        {
+            return code;
+        }
+
+        var text = GetOptionalProperty(cell, "Text")?.ToString();
+        return value is string
+            ? null
+            : NormalizeExcelErrorText(text);
+    }
+
+    private static bool TryMapExcelErrorValue(object? value, out string? code)
+    {
+        code = value switch
+        {
+            byte numeric => MapExcelErrorCode(numeric),
+            short numeric => MapExcelErrorCode(numeric),
+            int numeric => MapExcelErrorCode(numeric),
+            long numeric => MapExcelErrorCode((int)numeric),
+            float numeric => MapExcelErrorCode(Convert.ToInt32(numeric)),
+            double numeric => MapExcelErrorCode(Convert.ToInt32(numeric)),
+            decimal numeric => MapExcelErrorCode(decimal.ToInt32(numeric)),
+            _ => null
+        };
+
+        return code is not null;
+    }
+
+    private static string? MapExcelErrorCode(int errorCode) =>
+        errorCode switch
+        {
+            2000 => "#NULL!",
+            2007 => "#DIV/0!",
+            2015 => "#VALUE!",
+            2023 => "#REF!",
+            2029 => "#NAME?",
+            2036 => "#NUM!",
+            2042 => "#N/A",
+            2043 => "#GETTING_DATA",
+            _ => null
+        };
+
+    private static string? NormalizeExcelErrorText(string? text) =>
+        text switch
+        {
+            "#NULL!" => "#NULL!",
+            "#DIV/0!" => "#DIV/0!",
+            "#VALUE!" => "#VALUE!",
+            "#REF!" => "#REF!",
+            "#NAME?" => "#NAME?",
+            "#NUM!" => "#NUM!",
+            "#N/A" => "#N/A",
+            "#GETTING_DATA" => "#GETTING_DATA",
+            "#SPILL!" => "#SPILL!",
+            "#CALC!" => "#CALC!",
+            "#FIELD!" => "#FIELD!",
+            "#BLOCKED!" => "#BLOCKED!",
+            "#CONNECT!" => "#CONNECT!",
+            "#UNKNOWN!" => "#UNKNOWN!",
+            "#BUSY!" => "#BUSY!",
+            _ => null
+        };
 
     private static int GetElementCount(Array values)
     {

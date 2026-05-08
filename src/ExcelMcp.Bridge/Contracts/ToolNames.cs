@@ -38,6 +38,8 @@ public static class ToolNames
     public const string RangeGetFormulas = "range_get_formulas";
     public const string RangeSetFormulas = "range_set_formulas";
     public const string RangeClear = "range_clear";
+    public const string CalculationRecalculate = "calculation_recalculate";
+    public const string CalculationInspectErrors = "calculation_inspect_errors";
     public const string SessionGrantMutationPermission = "session_grant_mutation_permission";
     public const string SessionRevokeMutationPermission = "session_revoke_mutation_permission";
     public const string SessionGetMutationPermission = "session_get_mutation_permission";

@@ -29,6 +29,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string SheetName, string Address)> ReadRangeFormulaCalls { get; } = [];
     public List<(string SheetName, string Address, string?[,] Formulas)> WriteRangeFormulaCalls { get; } = [];
     public List<(string SheetName, string Address)> ClearRangeCalls { get; } = [];
+    public List<CalculationRequest> RecalculationCalls { get; } = [];
+    public List<ErrorInspectionRequest> ErrorInspectionCalls { get; } = [];
     public List<string> CreatedWorksheets { get; } = [];
     public List<(string SheetName, string NewSheetName)> RenamedWorksheets { get; } = [];
     public List<string> DeletedWorksheets { get; } = [];
@@ -133,6 +135,27 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         UpdatedTableOptions.Add(request);
         return Task.CompletedTask;
+    }
+
+    public Task RecalculateAsync(CalculationRequest request, CancellationToken cancellationToken = default)
+    {
+        RecalculationCalls.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<ErrorInspectionHit>> InspectErrorsAsync(ErrorInspectionRequest request, CancellationToken cancellationToken = default)
+    {
+        ErrorInspectionCalls.Add(request);
+        return Task.FromResult<IReadOnlyList<ErrorInspectionHit>>(
+        [
+            new ErrorInspectionHit(
+                request.SheetName ?? "Sheet1",
+                request.Address ?? "$A$1",
+                HasFormula: true,
+                Formula: "=1/0",
+                ErrorCode: "#DIV/0!",
+                ValueKind: "formula_error")
+        ]);
     }
 
     public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default)

@@ -25,6 +25,8 @@ The bridge currently supports:
 - rectangular range read
 - multi-range rectangular value write
 - rectangular formula read/write and clear-contents range operations
+- workbook/worksheet/range recalculation
+- workbook/worksheet/range error inspection with compact diagnostic hit lists
 
 ## Next five surfaces to prioritize
 
@@ -33,15 +35,15 @@ The bridge currently supports:
    - keep read operations broadly allowed
    - tighten refusal reasons for attached mutating tools
 
-2. Named ranges and table-aware reads
-   - enumerate workbook and worksheet names
-   - resolve named ranges to addresses and values
-   - add table-aware read paths so agents can work against stable structures instead of raw coordinates
-
-3. Formatting and presentation controls
+2. Formatting and presentation controls
    - inspect and change basic formatting
    - support common report-polish scenarios
    - keep formatting behind the same safety expectations as other mutating operations
+
+3. Workbook structure operations
+   - move or copy worksheets
+   - manage visibility and workbook working layout more intentionally
+   - support broader workbook orchestration while keeping COM isolated
 
 ## Following five surfaces after that
 
@@ -50,15 +52,13 @@ The bridge currently supports:
    - create or update connections
    - inspect dependency relationships between queries, connections, tables, and load targets
 
-5. Formula and calculation-aware worksheet operations
-   - trigger targeted recalculation
-   - inspect formula and cell error states directly
-   - add richer calculation-aware workflows on top of the new formula range baseline
+5. Richer calculation-aware worksheet operations
+   - add formula-error inspection summaries, smarter targeting shortcuts, or calculation-state-aware diagnostics on top of the new baseline
+   - explore whether calculation/reporting workflows should remain worksheet-centric or expand into broader workbook patching helpers
 
-6. Workbook structure operations
-   - move or copy worksheets
-   - manage visibility and workbook working layout more intentionally
-   - support broader workbook orchestration while keeping COM isolated
+6. Named-structure and dependency workflows
+   - deepen name, table, query, and connection dependency inspection
+   - support more coordinated workbook troubleshooting against stable structures rather than raw coordinates
 
 7. Data quality and validation surfaces
    - inspect and manage validation rules
@@ -77,12 +77,12 @@ The current recommendation is to prioritize durable data and workflow surfaces b
 That means:
 
 - safety comes before broader mutation
-- named structures and tables come before styling
+- shared-session safety still comes before broader mutation
 - workflow primitives come before richer workbook choreography
 - import/export and validation should follow once the bridge can mutate structures more confidently
 
 ## Notes
 
-- Query formula edit, range read/write, range formula/clear operations, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
+- Query formula edit, range read/write, range formula/clear operations, workbook/worksheet/range recalculation, workbook/worksheet/range error inspection, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
 - Any newly promoted mutating surface should continue to flow through the shared-session approval and safety seam.
 - Live Excel coverage should be extended alongside each new surface, but remain opt-in.
