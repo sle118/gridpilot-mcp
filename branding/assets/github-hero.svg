@@ -1,0 +1,118 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="620" rx="28" fill="#08131E"/>
+  <rect x="34" y="34" width="1132" height="552" rx="22" fill="url(#panelGlow)" opacity="0.9"/>
+  <g opacity="0.16" stroke="#14B88A">
+    <path d="M70 74H1130"/>
+    <path d="M70 134H1130"/>
+    <path d="M70 194H1130"/>
+    <path d="M70 254H1130"/>
+    <path d="M70 314H1130"/>
+    <path d="M70 374H1130"/>
+    <path d="M70 434H1130"/>
+    <path d="M70 494H1130"/>
+    <path d="M70 554H1130"/>
+    <path d="M120 60V570"/>
+    <path d="M220 60V570"/>
+    <path d="M320 60V570"/>
+    <path d="M420 60V570"/>
+    <path d="M520 60V570"/>
+    <path d="M620 60V570"/>
+    <path d="M720 60V570"/>
+    <path d="M820 60V570"/>
+    <path d="M920 60V570"/>
+    <path d="M1020 60V570"/>
+    <path d="M1120 60V570"/>
+  </g>
+
+  <g transform="translate(82 98)">
+    <rect width="144" height="144" rx="26" fill="#0C2230" stroke="#14B88A" stroke-width="4"/>
+    <path d="M16 40H128" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M16 72H128" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M16 104H128" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M48 16V128" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M80 16V128" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M16 116C56 116 76 106 92 90C106 77 120 57 132 38" stroke="#14B88A" stroke-width="9" stroke-linecap="round"/>
+    <path d="M62 66L142 38L106 122L90 92L62 66Z" fill="#F6F7F8"/>
+  </g>
+
+  <g>
+    <text x="256" y="132" fill="#3DD598" font-size="18" letter-spacing="4" font-family="JetBrains Mono, Consolas, monospace">LOCAL EXCEL CONTROL PLANE</text>
+    <text x="256" y="188" fill="#F6F7F8" font-size="52" font-weight="700" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="256" dy="0">Operate live workbooks</tspan>
+      <tspan x="256" dy="58">through a controlled,</tspan>
+      <tspan x="256" dy="58">safety-aware MCP host</tspan>
+    </text>
+    <text x="260" y="332" fill="#D6DEE5" font-size="21" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="260" dy="0">Connect to desktop Excel, target the right workbook,</tspan>
+      <tspan x="260" dy="28">and make observable edits without pushing orchestration into VBA.</tspan>
+    </text>
+    <g transform="translate(260 386)">
+      <rect width="164" height="46" rx="23" fill="#0E2432" stroke="#14B88A"/>
+      <text x="82" y="29" text-anchor="middle" fill="#E7F8F0" font-size="18" font-family="Inter, Segoe UI, Arial, sans-serif">Desktop Excel only</text>
+    </g>
+    <g transform="translate(438 386)">
+      <rect width="198" height="46" rx="23" fill="#0E2432" stroke="#14B88A"/>
+      <text x="99" y="29" text-anchor="middle" fill="#E7F8F0" font-size="18" font-family="Inter, Segoe UI, Arial, sans-serif">Structured workbook ops</text>
+    </g>
+    <g transform="translate(650 386)">
+      <rect width="190" height="46" rx="23" fill="#0E2432" stroke="#14B88A"/>
+      <text x="95" y="29" text-anchor="middle" fill="#E7F8F0" font-size="18" font-family="Inter, Segoe UI, Arial, sans-serif">Mutation leases + logs</text>
+    </g>
+  </g>
+
+  <g transform="translate(82 458)">
+    <rect width="250" height="128" rx="20" fill="#0B1C28" stroke="#173A4A"/>
+    <text x="26" y="34" fill="#3DD598" font-size="16" font-family="JetBrains Mono, Consolas, monospace">CONTROL</text>
+    <text x="26" y="64" fill="#F6F7F8" font-size="23" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Target edits</tspan>
+      <tspan x="26" dy="28">deliberately</tspan>
+    </text>
+    <text x="26" y="108" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Connect, target, mutate,</tspan>
+      <tspan x="26" dy="22">and persist with clear routing.</tspan>
+    </text>
+  </g>
+  <g transform="translate(348 458)">
+    <rect width="250" height="128" rx="20" fill="#0B1C28" stroke="#173A4A"/>
+    <text x="26" y="34" fill="#22D3EE" font-size="16" font-family="JetBrains Mono, Consolas, monospace">INSPECT</text>
+    <text x="26" y="64" fill="#F6F7F8" font-size="23" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">See workbook</tspan>
+      <tspan x="26" dy="28">structure clearly</tspan>
+    </text>
+    <text x="26" y="108" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Sheets, tables, ranges, formulas,</tspan>
+      <tspan x="26" dy="22">queries, names, and errors.</tspan>
+    </text>
+  </g>
+  <g transform="translate(614 458)">
+    <rect width="250" height="128" rx="20" fill="#0B1C28" stroke="#173A4A"/>
+    <text x="26" y="34" fill="#3DD598" font-size="16" font-family="JetBrains Mono, Consolas, monospace">DIAGNOSE</text>
+    <text x="26" y="64" fill="#F6F7F8" font-size="23" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Troubleshoot</tspan>
+      <tspan x="26" dy="28">with precision</tspan>
+    </text>
+    <text x="26" y="108" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Target refreshes, recalc scopes,</tspan>
+      <tspan x="26" dy="22">and compact error diagnostics.</tspan>
+    </text>
+  </g>
+  <g transform="translate(880 458)">
+    <rect width="238" height="128" rx="20" fill="#0B1C28" stroke="#173A4A"/>
+    <text x="26" y="34" fill="#22D3EE" font-size="16" font-family="JetBrains Mono, Consolas, monospace">ORCHESTRATE</text>
+    <text x="26" y="64" fill="#F6F7F8" font-size="23" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Keep humans</tspan>
+      <tspan x="26" dy="28">safe in the loop</tspan>
+    </text>
+    <text x="26" y="108" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="26" dy="0">Mutation leases, runtime logging,</tspan>
+      <tspan x="26" dy="22">and explicit session targeting.</tspan>
+    </text>
+  </g>
+
+  <defs>
+    <linearGradient id="panelGlow" x1="98" y1="84" x2="1088" y2="546" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1A27"/>
+      <stop offset="1" stop-color="#08131E"/>
+    </linearGradient>
+  </defs>
+</svg>

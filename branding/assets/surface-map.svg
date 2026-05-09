@@ -1,0 +1,103 @@
+<svg width="1200" height="820" viewBox="0 0 1200 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="820" rx="28" fill="#F4F7F9"/>
+  <text x="70" y="82" fill="#1F2933" font-size="34" font-weight="700" font-family="Inter, Segoe UI, Arial, sans-serif">Implemented Surface Map</text>
+  <text x="70" y="116" fill="#52616F" font-size="20" font-family="Inter, Segoe UI, Arial, sans-serif">The current bridge is already broad. These are the core capability families visible today.</text>
+
+  <g transform="translate(70 164)">
+    <rect width="320" height="236" rx="22" fill="#08131E"/>
+    <text x="28" y="40" fill="#22D3EE" font-size="16" font-family="JetBrains Mono, Consolas, monospace">SESSION</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Workbook</tspan>
+      <tspan x="28" dy="30">targeting</tspan>
+    </text>
+    <text x="28" y="126" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Open-workbook discovery, connect,</tspan>
+      <tspan x="28" dy="22">create, list/get/disconnect, and</tspan>
+      <tspan x="28" dy="22">connection-aware routing.</tspan>
+    </text>
+    <text x="28" y="204" fill="#3DD598" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Status:</tspan>
+      <tspan x="28" dy="22">implemented and stable</tspan>
+    </text>
+  </g>
+  <g transform="translate(440 164)">
+    <rect width="320" height="236" rx="22" fill="#0E2432"/>
+    <text x="28" y="40" fill="#3DD598" font-size="16" font-family="JetBrains Mono, Consolas, monospace">WORKBOOK</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Inventory and</tspan>
+      <tspan x="28" dy="30">persistence</tspan>
+    </text>
+    <text x="28" y="126" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Sheets, connections, save, save-as,</tspan>
+      <tspan x="28" dy="22">sheet lifecycle, move, copy,</tspan>
+      <tspan x="28" dy="22">and visibility.</tspan>
+    </text>
+    <text x="28" y="204" fill="#3DD598" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Status:</tspan>
+      <tspan x="28" dy="22">implemented and growing</tspan>
+    </text>
+  </g>
+  <g transform="translate(810 164)">
+    <rect width="320" height="236" rx="22" fill="#0B1C28"/>
+    <text x="28" y="40" fill="#22D3EE" font-size="16" font-family="JetBrains Mono, Consolas, monospace">RANGE</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Cells with</tspan>
+      <tspan x="28" dy="30">structure</tspan>
+    </text>
+    <text x="28" y="126" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Read/write values, formulas, clear</tspan>
+      <tspan x="28" dy="22">contents, read/write format,</tspan>
+      <tspan x="28" dy="22">row/column sizing, and autofit.</tspan>
+    </text>
+    <text x="28" y="204" fill="#3DD598" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Status:</tspan>
+      <tspan x="28" dy="22">implemented and practical</tspan>
+    </text>
+  </g>
+
+  <g transform="translate(70 444)">
+    <rect width="320" height="236" rx="22" fill="#0E2432"/>
+    <text x="28" y="40" fill="#3DD598" font-size="16" font-family="JetBrains Mono, Consolas, monospace">QUERY</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Refresh and</tspan>
+      <tspan x="28" dy="30">diagnose</tspan>
+    </text>
+    <text x="28" y="126" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Read definitions, targeted refresh,</tspan>
+      <tspan x="28" dy="22">probe, temp cleanup,</tspan>
+      <tspan x="28" dy="22">and formula update.</tspan>
+    </text>
+    <text x="28" y="204" fill="#3DD598" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">Status: implemented</text>
+  </g>
+  <g transform="translate(440 444)">
+    <rect width="320" height="236" rx="22" fill="#08131E"/>
+    <text x="28" y="40" fill="#22D3EE" font-size="16" font-family="JetBrains Mono, Consolas, monospace">TABLE + NAMES</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Stable workbook</tspan>
+      <tspan x="28" dy="30">structures</tspan>
+    </text>
+    <text x="28" y="126" fill="#AFC1CC" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Table lifecycle, row mutation,</tspan>
+      <tspan x="28" dy="22">options, and name</tspan>
+      <tspan x="28" dy="22">list/read/create/update/delete.</tspan>
+    </text>
+    <text x="28" y="204" fill="#3DD598" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">Status: implemented</text>
+  </g>
+  <g transform="translate(810 444)">
+    <rect width="320" height="236" rx="22" fill="#0F6A4A"/>
+    <text x="28" y="40" fill="#EAF8F2" font-size="16" font-family="JetBrains Mono, Consolas, monospace">SAFETY + DIAGNOSTICS</text>
+    <text x="28" y="74" fill="#FFFFFF" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Controlled live</tspan>
+      <tspan x="28" dy="30">automation</tspan>
+    </text>
+    <text x="28" y="126" fill="#E7F8F0" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Mutation leases, runtime logging,</tspan>
+      <tspan x="28" dy="22">recalculation scopes, and</tspan>
+      <tspan x="28" dy="22">compact error inspection.</tspan>
+    </text>
+    <text x="28" y="204" fill="#FFFFFF" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Status: implemented,</tspan>
+      <tspan x="28" dy="22">next focus is safety refinement</tspan>
+    </text>
+  </g>
+</svg>

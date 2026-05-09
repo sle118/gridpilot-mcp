@@ -1,0 +1,91 @@
+<svg width="1200" height="580" viewBox="0 0 1200 580" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="580" rx="28" fill="#F4F7F9"/>
+  <rect x="34" y="34" width="1132" height="512" rx="22" fill="#FFFFFF" stroke="#D6DEE5" stroke-width="2"/>
+  <text x="70" y="92" fill="#1F2933" font-size="34" font-weight="700" font-family="Inter, Segoe UI, Arial, sans-serif">GridPilot MCP Architecture</text>
+  <text x="70" y="126" fill="#52616F" font-size="20" font-family="Inter, Segoe UI, Arial, sans-serif">A controlled bridge between coding agents and live desktop Excel.</text>
+
+  <g transform="translate(86 192)">
+    <rect width="184" height="132" rx="20" fill="#08131E"/>
+    <text x="28" y="42" fill="#22D3EE" font-size="15" font-family="JetBrains Mono, Consolas, monospace">CLIENT</text>
+    <text x="28" y="68" fill="#F6F7F8" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Agent /</tspan>
+      <tspan x="28" dy="28">Codex</tspan>
+    </text>
+    <text x="28" y="110" fill="#AFC1CC" font-size="15" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Prompts, tools, and</tspan>
+      <tspan x="28" dy="20">MCP calls</tspan>
+    </text>
+  </g>
+  <g transform="translate(318 192)">
+    <rect width="196" height="132" rx="20" fill="#0E2432"/>
+    <text x="28" y="42" fill="#3DD598" font-size="15" font-family="JetBrains Mono, Consolas, monospace">TRANSPORT</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">MCP Host</text>
+    <text x="28" y="102" fill="#AFC1CC" font-size="15" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">stdio server, routing,</tspan>
+      <tspan x="28" dy="20">and argument handling</tspan>
+    </text>
+  </g>
+  <g transform="translate(562 192)">
+    <rect width="228" height="132" rx="20" fill="#0B1C28"/>
+    <text x="28" y="42" fill="#3DD598" font-size="15" font-family="JetBrains Mono, Consolas, monospace">CONTROL PLANE</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">Bridge Services</text>
+    <text x="28" y="102" fill="#AFC1CC" font-size="15" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Safety, validation, saves,</tspan>
+      <tspan x="28" dy="20">and diagnostics</tspan>
+    </text>
+  </g>
+  <g transform="translate(838 192)">
+    <rect width="196" height="132" rx="20" fill="#0E2432"/>
+    <text x="28" y="42" fill="#22D3EE" font-size="15" font-family="JetBrains Mono, Consolas, monospace">INTEROP</text>
+    <text x="28" y="74" fill="#F6F7F8" font-size="26" font-family="Inter, Segoe UI, Arial, sans-serif">COM Adapter</text>
+    <text x="28" y="102" fill="#AFC1CC" font-size="15" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="28" dy="0">Isolated Excel COM</tspan>
+      <tspan x="28" dy="20">operations</tspan>
+    </text>
+  </g>
+  <g transform="translate(1054 192)">
+    <rect width="88" height="132" rx="20" fill="#0F6A4A"/>
+    <text x="44" y="50" text-anchor="middle" fill="#EAF8F2" font-size="15" font-family="JetBrains Mono, Consolas, monospace">LIVE</text>
+    <text x="44" y="82" text-anchor="middle" fill="#FFFFFF" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="44" dy="0">Excel</tspan>
+    </text>
+  </g>
+
+  <g stroke="#14B88A" stroke-width="4" stroke-linecap="round">
+    <path d="M278 258H308"/>
+    <path d="M522 258H552"/>
+    <path d="M798 258H828"/>
+    <path d="M1042 258H1046"/>
+  </g>
+  <g fill="#14B88A">
+    <path d="M308 258L296 251V265L308 258Z"/>
+    <path d="M552 258L540 251V265L552 258Z"/>
+    <path d="M828 258L816 251V265L828 258Z"/>
+    <path d="M1046 258L1034 251V265L1046 258Z"/>
+  </g>
+
+  <g transform="translate(108 382)">
+    <rect width="278" height="120" rx="18" fill="#F8FBFC" stroke="#D6DEE5"/>
+    <text x="24" y="36" fill="#1F2933" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">Safety Layer</text>
+    <text x="24" y="70" fill="#52616F" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="24" dy="0">Mutation permissions, attached-session</tspan>
+      <tspan x="24" dy="22">checks, refusal reasons, and save behavior.</tspan>
+    </text>
+  </g>
+  <g transform="translate(462 382)">
+    <rect width="278" height="120" rx="18" fill="#F8FBFC" stroke="#D6DEE5"/>
+    <text x="24" y="36" fill="#1F2933" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">Observability</text>
+    <text x="24" y="70" fill="#52616F" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="24" dy="0">Runtime logging and structured results</tspan>
+      <tspan x="24" dy="22">without polluting MCP stdout.</tspan>
+    </text>
+  </g>
+  <g transform="translate(816 382)">
+    <rect width="278" height="120" rx="18" fill="#F8FBFC" stroke="#D6DEE5"/>
+    <text x="24" y="36" fill="#1F2933" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">Workbook Surface</text>
+    <text x="24" y="70" fill="#52616F" font-size="16" font-family="Inter, Segoe UI, Arial, sans-serif">
+      <tspan x="24" dy="0">Ranges, queries, tables, names,</tspan>
+      <tspan x="24" dy="22">formatting, worksheet layout, and diagnostics.</tspan>
+    </text>
+  </g>
+</svg>

@@ -1,9 +1,19 @@
-<svg width="400" height="120" viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg">
-<rect width="400" height="120" fill="#0B1220"/>
-<g>
-<rect x="10" y="20" width="80" height="80" fill="#0F6A4A" rx="12"/>
-<path d="M20 80 L70 30 L70 50 L100 20" stroke="#22D3EE" stroke-width="6" fill="none"/>
-<text x="110" y="65" font-family="Inter, Arial" font-size="36" fill="#E5E7EB">Grid<tspan fill="#10B981">Pilot</tspan></text>
-<text x="110" y="95" font-family="JetBrains Mono, monospace" font-size="14" fill="#374151">MCP</text>
-</g>
+<svg width="620" height="180" viewBox="0 0 620 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="620" height="180" rx="24" fill="#08131E"/>
+  <g transform="translate(20 22)">
+    <rect x="0" y="0" width="136" height="136" rx="24" fill="#0C2230" stroke="#14B88A" stroke-width="4"/>
+    <path d="M24 32H112" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M24 64H112" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M24 96H112" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M56 20V116" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M88 20V116" stroke="#14B88A" stroke-width="2.5"/>
+    <path d="M20 106C54 106 74 96 91 78C104 64 118 45 128 28" stroke="#14B88A" stroke-width="9" stroke-linecap="round"/>
+    <path d="M75 63L177 28L132 134L115 96L75 63Z" fill="#F6F7F8"/>
+  </g>
+  <g>
+    <text x="206" y="90" fill="#F6F7F8" font-size="68" font-weight="700" font-family="Inter, Segoe UI, Arial, sans-serif">Grid<tspan fill="#3DD598">Pilot</tspan></text>
+    <path d="M211 120H325" stroke="#14B88A" stroke-width="3"/>
+    <text x="348" y="132" fill="#E7F8F0" font-size="28" letter-spacing="10" font-family="JetBrains Mono, Consolas, monospace">MCP</text>
+    <path d="M450 120H564" stroke="#14B88A" stroke-width="3"/>
+  </g>
 </svg>

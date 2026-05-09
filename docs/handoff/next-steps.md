@@ -1,29 +1,35 @@
-# Next steps
+# Next Steps
 
-## Immediate priorities
+The bridge now has a broad enough workbook surface that the next work should focus on **safety refinement and the next high-value structure layers**, not on random surface sprawl.
 
-1. Stabilize the broadened workbook-polish baseline now that recalculation/error inspection, formatting, and worksheet layout operations are all implemented.
-2. Improve unsafe UI-state detection beyond the current readiness/interactivity-plus-edit/modal heuristics now that formatting and worksheet layout mutations are live.
-3. Decide whether the current approval lease should evolve into a stronger coordination model before even broader workbook editing is exposed.
-4. Package the next workbook-surface wave into small backlog or delegation slices for future agents, especially validation/conditional-formatting, richer workbook layout, and dependency-aware workflows.
-5. Use the runtime logging switch during live workbook trials and refine log coverage/field choices based on the first real regression investigations.
+## Immediate Priorities
 
-## Suggested first bounded implementation slice
+1. **Strengthen attached-session safety**
+   Improve unsafe UI-state detection and refusal reasons now that formatting and worksheet layout mutations are live.
+2. **Decide whether leases are enough**
+   Revisit whether mutation permissions should remain a simple approval lease or evolve into a stronger coordination model.
+3. **Package the next surface wave**
+   Prefer focused slices such as validation/conditional-formatting diagnostics, richer workbook layout/protection helpers, or deeper dependency-aware workflows.
+4. **Keep runtime logging sharp**
+   Continue adjusting log coverage and fields based on real live-workbook regressions.
 
-- improve unsafe attached-session UI detection and refusal reasons for the broadened workbook-polish surface
-- pick the next post-polish family as a focused slice, likely validation/conditional-formatting diagnostics or broader workbook layout/protection helpers
-- keep broader shared-session coordination redesign out of the same slice
+## Recommended Next Slice
 
-## Reference roadmap
+The best next bounded slice is:
 
-- workbook-surface expansion priorities are captured in `docs/topics/workbook-surface-roadmap.md`
+- safer attached-session mutation handling for the broadened workbook-polish baseline
+- plus one focused post-polish workbook family, likely validation or workbook-layout refinement
+
+Keep broader shared-session coordination redesign out of that same slice.
+
+## Reference
+
+- roadmap: `docs/topics/workbook-surface-roadmap.md`
 
 ## Cautions
 
-- avoid a broad rename of `ExcelMcp.*` until it is a deliberate tracked task
-- do not let branding work trigger large structural churn
-- do not design live Excel tests in a way that affects default CI
-- keep COM isolated behind interfaces
-- do not assume concurrent agent/user workbook mutation is safe until explicit coordination rules and safeguards exist
-- do not let new connected-workbook ergonomics bypass path-scoped mutation approval for attached sessions
-- keep runtime logging out of MCP stdout; transport tracing should stay in the separate proxy tool
+- do not broaden mutation behavior faster than safety rules
+- do not mix a major rename of `ExcelMcp.*` into unrelated feature work
+- keep live Excel tests opt-in
+- keep COM details isolated behind interfaces
+- keep runtime logging separate from MCP stdout and proxy transport traces

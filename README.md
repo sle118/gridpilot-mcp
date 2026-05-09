@@ -1,141 +1,110 @@
 # GridPilot MCP
 
-GridPilot MCP is a local desktop automation bridge for Microsoft Excel. It is designed to let coding agents inspect, edit, refresh, and troubleshoot live workbooks through a controlled C# MCP host instead of pushing orchestration logic into VBA.
+![GridPilot MCP hero](branding/assets/github-hero.svg)
 
-The current repository bootstrap is intentionally split into two layers:
+GridPilot MCP is a local desktop automation bridge for Microsoft Excel. It gives coding agents a controlled MCP host for inspecting, editing, refreshing, and diagnosing live workbooks without pushing orchestration logic into VBA.
 
-- a **governance layer** for cross-agent continuity, documentation hygiene, and testing discipline
-- a **solution skeleton** for the future bridge, using provisional `ExcelMcp.*` assembly and namespace names inside the starter code
+## Why It Matters
 
-The external project identity is now **GridPilot MCP**. The internal starter code still uses `ExcelMcp.*` as a temporary implementation namespace so the overlay can be applied cleanly after the earlier zip packs without leaving broken references. A dedicated rename pass can be done later once the first working slices are in place.
+- Operate **live desktop Excel** through a dedicated control plane instead of workbook-side scripts.
+- Keep edits **deliberate and observable** with connection routing, mutation permissions, and runtime logging.
+- Target the real workbook surface: **ranges, queries, tables, names, formatting, worksheet layout, and diagnostics**.
+- Preserve a path for safe human + agent coexistence instead of pretending unattended automation is the goal.
 
-## Mission
+## What It Is
 
-GridPilot MCP will provide a local C# MCP bridge over a live desktop Excel instance. The bridge will own session safety, targeted refresh, Power Query diagnostics, cleanup of temporary artifacts, and a testable abstraction boundary over Excel COM.
+GridPilot MCP is the human-facing identity of this repository. The implementation still uses provisional `ExcelMcp.*` project and namespace names inside the solution while the early workbook surface continues to evolve.
 
-## Current structure
+The current repo is intentionally split into two layers:
 
-- `AGENTS.md`: fast operational entry point for agents
-- `CONTRIBUTING.md`: branch, commit, test, and documentation rules
-- `branding/assets/`: repository branding assets and source images
-- `docs/`: architecture, decisions, topics, handoff, and worklogs
-- `src/`: starter implementation projects, currently under provisional `ExcelMcp.*` names
-- `tests/`: unit, integration, and optional live Excel tests
+- a governance layer for docs, handoff continuity, testing discipline, and repo workflow
+- a working C# bridge that is steadily expanding the live Excel workbook surface
 
-## Capabilities
+## Why It Exists
 
-| Capability | Status | What it covers now | Planned expansion |
-| --- | --- | --- | --- |
-| Session and workbook connection management | ✓ Implemented | lazy MCP startup, open-workbook discovery, connect, create workbook, list/get/disconnect connections, connection-bound routing | richer coordination for concurrent human + agent workflows |
-| Workbook inventory and diagnostics | ✓ Implemented | sheets, tables, queries, connections, runtime logging, targeted workbook diagnostics | deeper dependency inspection and richer workbook health reporting |
-| Workbook persistence | ✓ Implemented | save in place and save as with connection retargeting | close/reopen and broader workbook lifecycle orchestration |
-| Worksheet lifecycle and layout | ✓ Implemented | create, rename, delete, move, copy, reorder, and set worksheet visibility including `veryHidden` | broader workbook choreography and cross-workbook sheet operations |
-| Range value read/write | ✓ Implemented | rectangular range read and multi-range value write | richer typed payloads, import/export helpers, and patch-oriented workflows |
-| Range formula operations | ✓ Implemented | read formulas, write formulas, and preserve non-formula cells as `null` in formula reads | richer formula helpers and patch-oriented workflows layered on top |
-| Range clear operations | ✓ Implemented | clear contents only for one or more ranges | broader worksheet hygiene and optional richer clear modes if ever needed |
-| Calculation and error diagnostics | ✓ Implemented | workbook/worksheet/range recalculation plus compact inspection hit lists for healthy formulas, formula errors, and literal error cells | richer calculation-state diagnostics and broader troubleshooting helpers |
-| Workbook and worksheet names | ✓ Implemented | list, resolve, read, create, update, and delete names | deeper named-structure diagnostics and bulk maintenance |
-| Query read / refresh / probe / cleanup | ✓ Implemented | query definition read, targeted refresh, diagnostic probe, temp-query cleanup, query formula edit | finer refresh control and more dependency-aware diagnostics |
-| Query lifecycle | Future | not implemented yet | create, delete, rename, and connection/query dependency operations |
-| Table read / detail / mutation | ✓ Implemented | read/detail, create, resize, append, replace, delete, and core options updates | richer schema operations and more table-aware workflows |
-| Workbook structure orchestration | Partial | workbook create/save/save-as plus worksheet lifecycle/layout are implemented | broader workbook choreography beyond the current sheet surface |
-| Formatting and presentation controls | ✓ Implemented | compact range formatting read/write, mixed-property detection, row/column sizing, and autofit | borders, conditional formatting, merged cells, and richer presentation workflows |
-| Data validation and conditional formatting | Future | not implemented yet | inspect and manage validation rules, conditional formatting, and overwrite-safety signals |
-| Charts and shapes | Future | not implemented yet | inspect and manipulate charts, images, drawing shapes, and related presentation objects |
-| Pivot tables and slicers | Future | not implemented yet | inspect and manipulate pivots, caches, timelines, and slicers |
-| Import / export workflows | Future | not implemented yet | CSV/JSON export, import helpers, snapshots, and rollback-friendly interchange workflows |
-| Workbook protection / window layout | Future | not implemented yet | workbook-level protection, window/layout, and related structural controls beyond current worksheet visibility/layout |
-| VBA project manipulation | Future | not implemented yet | inspect and edit VBA projects/modules so agents can generate small repetitive scripts or workbook-side functionality when useful |
+The project is built around a few simple rules:
 
-## MCP launch and discovery
+- Excel stays the **data plane**.
+- The C# bridge owns **session safety, routing, cleanup, retries, and diagnostics**.
+- Agents should get **targeted tools**, not a vague “run whatever in Excel” escape hatch.
+- Normal validation should stay **mock-first**, with live Excel remaining opt-in.
 
-GridPilot MCP is a console MCP host that is meant to be launched by an MCP client over `stdio`. It is not designed for automatic network discovery or as a long-running HTTP service. In practice, a client such as Codex launches the host process, then negotiates tools over MCP using the process pipes.
+![Architecture overview](branding/assets/architecture-overview.svg)
 
-The common Codex setup flow is to register the server once with the Codex CLI. The Codex desktop app can then reuse that shared MCP configuration.
+## What You Can Do Today
 
-Registering the MCP server does not mean Excel starts immediately or that a workbook is already selected. The host now starts lazily and expects agents to explicitly discover and connect workbooks after MCP startup.
+![Implemented surface map](branding/assets/surface-map.svg)
 
-For Codex, prefer registering the built host executable rather than `dotnet run`. That avoids extra build-time overhead during MCP startup and is usually more reliable when the client enforces a startup timeout.
+### Session
 
-Register a dedicated hidden Excel instance:
+**Status:** implemented
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode create-new
-```
+- list open workbooks across running Excel instances
+- connect by workbook name or full path
+- create a new workbook through the bridge
+- route later calls through `connectionId`
+- list, inspect, and disconnect workbook connections
 
-Register an attached live-session mode that targets the running Excel instance owning the workbook:
+### Workbook
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner
-```
+**Status:** implemented, still expanding
 
-Enable file-backed runtime logging for real-world troubleshooting:
+- inventory sheets, queries, connections, and tables
+- save in place and save as with connection retargeting
+- create, rename, delete, move, copy, and reorder worksheets
+- set worksheet visibility including `veryHidden`
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
-```
+### Range
 
-Supported runtime logging switches:
+**Status:** implemented and practical
 
-- `--log-level off|info|debug|trace`
-- `--log-path <file>`
+- read and write rectangular values
+- read and write formulas
+- clear contents while preserving layout
+- read and write compact formatting snapshots
+- set row height, column width, and autofit
+- distinguish true no-fill from explicit fill state
 
-Matching environment variables are also supported:
+### Query
 
-- `GRIDPILOT_LOG_LEVEL`
-- `GRIDPILOT_LOG_PATH`
+**Status:** implemented
 
-Useful follow-up commands:
+- read query definitions
+- run targeted refresh
+- run diagnostic probes
+- clean up temp diagnostic queries
+- update query formulas
 
-```powershell
-codex mcp list
-codex mcp get gridpilot
-```
+### Table And Names
 
-If Codex reports that the MCP client timed out during startup, increase the configured startup timeout in `~/.codex/config.toml`:
+**Status:** implemented
 
-```toml
-[mcp_servers.gridpilot]
-startup_timeout_sec = 60
-```
+- read table payloads and metadata
+- create, resize, append, replace, delete, and configure tables
+- list, resolve, read, create, update, and delete workbook and worksheet-scoped names
 
-Runtime logging is separate from the MCP troubleshooting proxy:
+### Safety And Diagnostics
 
-- use host runtime logging first when you want workbook/session/COM lifecycle diagnostics during normal runs
-- use the MCP proxy when you need raw client-to-server transport traces
+**Status:** implemented, next focus is refinement
 
-## MCP troubleshooting proxy
+- workbook-, worksheet-, and range-scoped recalculation
+- compact formula and literal error inspection
+- mutation-permission leases for attached sessions
+- runtime logging across host, bridge, and COM adapter
+- structured failures instead of silent UI-driven behavior
 
-When Codex-to-host startup behavior needs deeper inspection, register Codex against the bundled MCP stdio proxy instead of the host directly. The proxy forwards stdin/stdout/stderr unchanged and logs parsed MCP traffic to a file.
+## How It Connects
 
-Example registration:
+![Normal workbook flow](branding/assets/workflow-overview.svg)
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolProxy\bin\Debug\net8.0\ExcelMcp.ToolProxy.exe --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\mcp-proxy\gridpilot.log --label gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
-```
+Typical flow:
 
-The proxy log will capture:
-
-- process launch command and arguments
-- client-to-server MCP frames
-- server-to-client MCP frames
-- wrapped host stderr lines
-- wrapped process exit code
-
-## Workbook connection flow
-
-GridPilot MCP now separates MCP registration from workbook use:
-
-1. start the MCP server
+1. start the MCP host
 2. optionally call `session_list_open_workbooks`
-3. call `session_connect_workbook` with either:
-   - `workbookName` to attach to an already-open workbook by visible workbook title
-   - `workbookPath` to attach if already open, or otherwise open it in a bridge-owned Excel session
-4. use the returned `connectionId` on later workbook tool calls
+3. call `session_connect_workbook`
+4. use the returned `connectionId` on later workbook tools
 
-The host can keep multiple workbook connections at once. Existing workbook tools still accept `workbookPath`, but agents can now omit it and pass `connectionId` instead.
-
-Representative tool flow:
+Representative MCP flow:
 
 ```text
 session_list_open_workbooks
@@ -145,31 +114,98 @@ range_read { "connectionId": "...", "sheetName": "Summary", "address": "A1:C10" 
 session_disconnect_workbook { "connectionId": "..." }
 ```
 
-## Branding assets
+## Launch And MCP Setup
 
-The branding package has been folded into the repository under `branding/assets/`.
+### Recommended host registration
 
-Included assets:
+For Codex, prefer registering the built host executable rather than `dotnet run`.
 
-- `logo.svg`
-- `logo-dark.svg`
-- `icon.svg`
-- `icon-dark.svg`
-- two presentation boards as PNG references
+Attached live-session mode:
 
-## Expected unzip order
+```powershell
+codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner
+```
 
-If you are reconstructing the workspace from generated packs, unzip in this order:
+Dedicated hidden Excel instance:
+
+```powershell
+codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode create-new
+```
+
+### Runtime logging
+
+Use file-backed runtime logging for real troubleshooting without polluting MCP stdout:
+
+```powershell
+codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
+```
+
+Supported switches:
+
+- `--log-level off|info|debug|trace`
+- `--log-path <file>`
+
+Matching environment variables:
+
+- `GRIDPILOT_LOG_LEVEL`
+- `GRIDPILOT_LOG_PATH`
+
+### MCP troubleshooting proxy
+
+When startup or transport behavior needs inspection, register the proxy in front of the host:
+
+```powershell
+codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolProxy\bin\Debug\net8.0\ExcelMcp.ToolProxy.exe --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\mcp-proxy\gridpilot.log --label gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
+```
+
+### Useful follow-up commands
+
+```powershell
+codex mcp list
+codex mcp get gridpilot
+```
+
+If Codex reports MCP startup timeouts, increase the timeout in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.gridpilot]
+startup_timeout_sec = 60
+```
+
+## Repo Shape
+
+- `AGENTS.md`
+  Fast operational rules for agents working in this repo.
+- `branding/assets/`
+  Logos, icons, reference boards, and the GitHub presentation kit.
+- `docs/handoff/`
+  Current state and near-term next actions.
+- `docs/topics/`
+  Focused technical notes.
+- `src/`
+  The bridge, host, COM adapter, and supporting projects.
+- `tests/`
+  Unit, integration, and opt-in live Excel validation.
+
+## Branding Assets
+
+The repo ships with light and dark logos plus reference boards under `branding/assets/`.
+
+- use `logo.svg` on light backgrounds
+- use `logo-dark.svg` on dark backgrounds
+- keep new GitHub-facing visuals in `branding/assets/` so there is one clear source of truth
+
+## Expected Unzip Order
+
+If reconstructing the workspace from generated packs, unzip in this order:
 
 1. governance pack
 2. solution skeleton pack
 3. branding overlay pack
 
-The branding overlay is meant to rewrite the human-facing files after the earlier two packs are expanded.
+## Current Priorities
 
-## Near-term priorities
-
-1. improve attached-session unsafe-UI detection now that formatting and worksheet layout mutations are live on the bridge surface
+1. improve attached-session unsafe-UI detection now that formatting and worksheet layout mutations are live
 2. decide whether mutation approval should evolve into a stronger coordination model for concurrent human and agent editing
-3. package the next workbook-surface slices after the new workbook-polish baseline, especially validation, workbook-layout, and richer dependency-aware workflows
-4. keep using runtime logging during live workbook trials and refine fields based on real regressions
+3. package the next workbook-surface slices after the current workbook-polish baseline
+4. keep refining runtime logging based on real regression investigations

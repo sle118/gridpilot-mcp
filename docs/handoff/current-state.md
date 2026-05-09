@@ -1,95 +1,56 @@
-# Current state
+# Current State
 
-## Project identity
+GridPilot MCP is now a **working local C# MCP bridge for live desktop Excel**, not just a repo skeleton. The current baseline already covers the major workbook operation families needed for real agent workflows.
 
-The repository identity is **GridPilot MCP**.
+## In Place Today
 
-GridPilot MCP is intended to become a local C# MCP bridge for live Excel desktop automation, focused on workbook audit, targeted refresh, Power Query diagnostics, and controlled session management.
+- **Workbook targeting and session control**
+  - lazy MCP startup
+  - open-workbook discovery
+  - connect, create, list/get/disconnect connections
+  - connection-aware routing and save-as retargeting
+- **Workbook and worksheet structure**
+  - inventory for sheets, tables, queries, and connections
+  - save and save-as
+  - worksheet create, rename, delete, move, copy, reorder, and visibility control
+- **Range operations**
+  - read/write values
+  - read/write formulas
+  - clear contents
+  - compact range formatting read/write
+  - row height, column width, and autofit
+- **Query, table, and name surfaces**
+  - query read, targeted refresh, probe, cleanup, and formula update
+  - table read/detail/create/resize/append/replace/delete/options
+  - workbook and worksheet-scoped name list/read/create/update/delete
+- **Diagnostics and safety**
+  - workbook/worksheet/range recalculation
+  - compact formula and literal error inspection
+  - attached-session mutation permission leases
+  - structured runtime logging across host, bridge, and COM adapter
+- **Validation**
+  - unit and integration coverage for the implemented surface
+  - opt-in live Excel harness including attached-session checks
 
-## What currently exists
+## Naming Note
 
-- a governance/documentation starter pack
-- a C# solution skeleton using provisional `ExcelMcp.*` project names
-- unit/integration/live test placeholders
-- a first mock-based service example
-- a first COM-backed Excel session wrapper with scoped application-state restore for `DisplayAlerts`, `EnableEvents`, and `ScreenUpdating`
-- workbook inventory for sheets, tables, connections, and queries over the COM workbook wrapper
-- targeted query refresh with structured success/failure results
-- diagnostic query probing via temp-query creation, preview load, and cleanup
-- temp-query cleanup with structured partial-failure reporting
-- query formula edit with structured success/failure results and bridge-owned save behavior
-- range read and multi-range write with bridge-side preflight validation and bridge-owned save behavior for successful writes
-- workbook and worksheet-scoped name inventory, named-range reads, and explicit name create/update/delete operations
-- table-aware reads with headers, rows, totals-row metadata, and deeper table metadata reads
-- structured table lifecycle and mutation:
-  - create table from range
-  - resize table
-  - append rows
-  - replace table body rows
-  - delete table
-  - set core table options (`hasHeaders`, `showTotals`)
-- workbook persistence and worksheet lifecycle:
-  - save workbook in place
-  - save workbook as a new path with connection retargeting
-  - create worksheets
-  - rename worksheets
-  - delete non-last worksheets
-  - move worksheets by explicit placement
-  - copy worksheets within the same workbook
-  - set worksheet visibility with `visible`, `hidden`, and `veryHidden`
-  - connection-targeted workbook operations now serialize per `connectionId`, so `workbook_save_as` retargets the live connection before later same-connection tool calls run
-- range formula and clear operations:
-  - read formulas with `null` for non-formula cells
-  - write formulas into one or more rectangular ranges
-  - clear range contents while preserving formatting and layout
-- compact range formatting and layout controls:
-  - read one range-level formatting snapshot with `mixedProperties` for mixed values
-  - write formatting patches for number format, font, colors, alignment, wrapping, row height, and column width
-  - autofit rows, columns, or both for one or more range targets
-- calculation and error diagnostics:
-  - targeted recalculation for workbook, worksheet, and range scopes without implicit save behavior
-  - compact error-inspection hit lists for healthy formulas, formula-evaluated errors, and literal error cells
-- lazy MCP host startup with explicit multi-workbook connection management:
-  - list open workbooks across running Excel instances
-  - connect by visible workbook title or full path
-  - create a brand-new workbook by full path through an explicit bridge-owned create tool
-  - reuse connection ids across later workbook tool calls
-  - disconnect individual connected workbooks
-  - expose attached mutation approval state on connection responses so clients can tell whether one workbook-scoped lease is already active for the current host session
-- file-backed runtime logging across the host, bridge, and COM adapter:
-  - enabled by `--log-level` / `--log-path` or matching `GRIDPILOT_*` environment variables
-  - structured one-line entries for host lifecycle, MCP tool calls, workbook routing, safety checks, and COM session/workbook activity
-  - kept separate from the MCP proxy’s raw transport logging
-- a mutation-permission seam with session diagnostics, workbook-aware attached-session targeting, richer unsafe-state classification, and workbook-scoped or session-scoped mutation permission leases
-- a widened but still structured MCP stdio host surface for session workbook discovery/connect/list/get/disconnect/create, inventory, workbook save/save-as, worksheet create/rename/delete/move/copy/set-visibility, workbook-name listing, name resolution/read/create/update/delete, query definition read, targeted refresh, probing, temp-query cleanup, query formula edit, table get/read/create/resize/append/replace/delete/options, range read, range write, range format read/write/autofit, range formula read/write, range clear, calculation recalculate, calculation inspect errors, generic mutation permission grant/revoke/status tools, compatibility attached-session grant/revoke shims, plus structured host-side argument and invocation errors
-- a level-based runtime logging switch on the MCP host surface intended for real-world regression troubleshooting without polluting MCP stdout
-- an opt-in live Excel harness with a tracked workbook fixture and real Excel validation for session state, inventory, cleanup, targeted refresh, probing, and lease-gated attached-session mutation
-- a separately gated attached-session live suite that now validates workbook-targeted attachment, read-only inventory and range reads, pre-approval refusal for workbook edits, approved mutation, revoke, and approval expiry against a real running Excel instance
-- workbook identity normalization is now aligned across discovery, connect, approval, safety checks, and attached query mutation so URL-style workbook identities can flow end to end without synthetic local-path rewrites
-- branding assets now folded into `branding/assets/`
+Use **GridPilot MCP** in repo-facing material.
 
-## Important naming note
+The code still uses `ExcelMcp.*` names intentionally until a dedicated rename pass is planned.
 
-Human-facing repository materials should now use **GridPilot MCP**.
+## Stable Direction
 
-Internal code-level names remain `ExcelMcp.*` for the moment so the staged zip overlays can be applied cleanly and early implementation can proceed without a noisy rename churn. A dedicated rename pass may happen later.
+- local interactive Excel desktop automation only
+- out-of-process C# bridge as the control plane
+- workbook stays the data plane
+- mock-first validation with opt-in live Excel coverage
+- explicit workbook connection after MCP startup
+- eventual safe coexistence between human editing and agent operations
 
-## Stable direction
+## Main Gaps
 
-The intended architecture remains:
-
-- local interactive Excel desktop automation
-- out-of-process C# bridge as control plane
-- workbook kept as data plane, not orchestration layer
-- mock-first test strategy
-- optional local-only live Excel validation tier
-- eventual safe coexistence between agent operations and active human editing in the same live workbook session
-- explicit workbook connection after MCP startup rather than eager Excel startup during host initialization
-
-## Immediate gaps
-
-- no broad concurrency/coordination support yet for safe agent work while a human is actively editing the same workbook
-- no broad attached-session coordination support yet beyond the current gated surface for query edits, workbook save/save-as, worksheet create/rename/delete/move/copy/set-visibility, name lifecycle, named-range reads, table get/read/create/resize/append/replace/delete/options, range read/write/format/autofit/formula/clear, recalculation, refresh, probe, and temp-query cleanup
-- no broad unsafe-UI detection yet beyond the current readiness/interactivity-plus-edit/modal heuristics
-- no deeper workbook-presentation surface yet beyond compact formatting, row/column sizing, autofit, and worksheet move/copy/visibility
-- no first backlog/delegation packet set yet
+- attached-session unsafe-UI detection is still narrower than the broadened mutation surface
+- coordination between human editing and agent editing is still lease-based rather than fully modeled
+- workbook-presentation depth is still compact rather than rich
+- validation and conditional-formatting surfaces are not implemented yet
+- no dedicated public website or app shell exists; the repo itself is still the primary presentation layer
