@@ -32,6 +32,20 @@ public sealed class LiveAttachedSessionSafetyTests
     }
 
     [AttachedLiveExcelFact]
+    public async Task AttachedSession_FormatRead_IsAllowedWithoutApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+
+        var format = await context.WorkbookService.ReadRangeFormatAsync(
+            context.WorkbookPath,
+            "Sheet1",
+            "A1");
+
+        Assert.True(format.Succeeded);
+        Assert.Equal("Sheet1", format.SheetName);
+    }
+
+    [AttachedLiveExcelFact]
     public async Task AttachedSession_MutatingRefresh_IsBlockedWithoutApproval()
     {
         await using var context = await AttachedLiveExcelTestContext.CreateAsync();
@@ -396,5 +410,66 @@ public sealed class LiveAttachedSessionSafetyTests
         var inventory = await context.WorkbookService.ListInventoryAsync(context.WorkbookPath);
         Assert.DoesNotContain(inventory.Sheets, sheet => string.Equals(sheet.Name, sheetName, StringComparison.Ordinal));
         Assert.DoesNotContain(inventory.Tables, table => string.Equals(table.TableName, tableName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [AttachedLiveExcelFact]
+    public async Task AttachedSession_FormattingAndWorksheetLayoutMutations_FailBeforeApproval_AndSucceedAfterApproval()
+    {
+        await using var context = await AttachedLiveExcelTestContext.CreateAsync();
+        var suffix = Guid.NewGuid().ToString("N")[..6];
+        var sheetName = $"GPLAttach{suffix}";
+
+        await context.GrantApprovalAsync();
+        Assert.True((await context.WorkbookService.CreateWorksheetAsync(context.WorkbookPath, sheetName)).Succeeded);
+        await context.RevokeApprovalAsync();
+
+        var blockedFormat = await context.WorkbookService.WriteRangeFormatsAsync(
+            context.WorkbookPath,
+            new RangeFormatWriteRequest(
+            [
+                new RangeFormatWriteTarget("Sheet1", "F20", new RangeFormatPatch(Bold: true, FillColor: "#CCDD11"))
+            ]));
+        Assert.False(blockedFormat.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedFormat.Error?.Code);
+
+        var blockedAutofit = await context.WorkbookService.AutofitRangesAsync(
+            context.WorkbookPath,
+            new RangeAutofitRequest([new RangeAutofitTarget("Sheet1", "F20", "columns")]));
+        Assert.False(blockedAutofit.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedAutofit.Error?.Code);
+
+        var blockedVisibility = await context.WorkbookService.SetWorksheetVisibilityAsync(
+            context.WorkbookPath,
+            new WorksheetVisibilityRequest(sheetName, "hidden"));
+        Assert.False(blockedVisibility.Succeeded);
+        Assert.Equal("shared_session_approval_required", blockedVisibility.Error?.Code);
+
+        await context.GrantApprovalAsync();
+
+        var written = await context.WorkbookService.WriteRangeFormatsAsync(
+            context.WorkbookPath,
+            new RangeFormatWriteRequest(
+            [
+                new RangeFormatWriteTarget("Sheet1", "F20", new RangeFormatPatch(Bold: true, FillColor: "#CCDD11", ColumnWidth: 7d))
+            ]));
+        Assert.True(written.Succeeded);
+
+        var autofit = await context.WorkbookService.AutofitRangesAsync(
+            context.WorkbookPath,
+            new RangeAutofitRequest([new RangeAutofitTarget("Sheet1", "F20", "columns")]));
+        Assert.True(autofit.Succeeded);
+
+        var hidden = await context.WorkbookService.SetWorksheetVisibilityAsync(
+            context.WorkbookPath,
+            new WorksheetVisibilityRequest(sheetName, "veryHidden"));
+        Assert.True(hidden.Succeeded);
+
+        var inventory = await context.WorkbookService.ListInventoryAsync(context.WorkbookPath);
+        var entry = Assert.Single(inventory.Sheets, sheet => string.Equals(sheet.Name, sheetName, StringComparison.Ordinal));
+        Assert.Equal("veryHidden", entry.Visibility);
+
+        var format = await context.WorkbookService.ReadRangeFormatAsync(context.WorkbookPath, "Sheet1", "F20");
+        Assert.True(format.Succeeded);
+        Assert.True(format.Format.Bold);
     }
 }

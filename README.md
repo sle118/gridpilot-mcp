@@ -29,7 +29,7 @@ GridPilot MCP will provide a local C# MCP bridge over a live desktop Excel insta
 | Session and workbook connection management | ✓ Implemented | lazy MCP startup, open-workbook discovery, connect, create workbook, list/get/disconnect connections, connection-bound routing | richer coordination for concurrent human + agent workflows |
 | Workbook inventory and diagnostics | ✓ Implemented | sheets, tables, queries, connections, runtime logging, targeted workbook diagnostics | deeper dependency inspection and richer workbook health reporting |
 | Workbook persistence | ✓ Implemented | save in place and save as with connection retargeting | close/reopen and broader workbook lifecycle orchestration |
-| Worksheet lifecycle | ✓ Implemented | create, rename, and delete non-last worksheets | move/copy, visibility, ordering, and sheet layout orchestration |
+| Worksheet lifecycle and layout | ✓ Implemented | create, rename, delete, move, copy, reorder, and set worksheet visibility including `veryHidden` | broader workbook choreography and cross-workbook sheet operations |
 | Range value read/write | ✓ Implemented | rectangular range read and multi-range value write | richer typed payloads, import/export helpers, and patch-oriented workflows |
 | Range formula operations | ✓ Implemented | read formulas, write formulas, and preserve non-formula cells as `null` in formula reads | richer formula helpers and patch-oriented workflows layered on top |
 | Range clear operations | ✓ Implemented | clear contents only for one or more ranges | broader worksheet hygiene and optional richer clear modes if ever needed |
@@ -38,13 +38,13 @@ GridPilot MCP will provide a local C# MCP bridge over a live desktop Excel insta
 | Query read / refresh / probe / cleanup | ✓ Implemented | query definition read, targeted refresh, diagnostic probe, temp-query cleanup, query formula edit | finer refresh control and more dependency-aware diagnostics |
 | Query lifecycle | Future | not implemented yet | create, delete, rename, and connection/query dependency operations |
 | Table read / detail / mutation | ✓ Implemented | read/detail, create, resize, append, replace, delete, and core options updates | richer schema operations and more table-aware workflows |
-| Workbook structure orchestration | Partial | worksheet lifecycle and workbook create/save/save-as are implemented | workbook choreography beyond current sheet lifecycle, visibility, layout, and copy/move operations |
-| Formatting and presentation controls | Future | not implemented yet | number formats, autofit, wrapping, alignment, and report-polish operations |
+| Workbook structure orchestration | Partial | workbook create/save/save-as plus worksheet lifecycle/layout are implemented | broader workbook choreography beyond the current sheet surface |
+| Formatting and presentation controls | ✓ Implemented | compact range formatting read/write, mixed-property detection, row/column sizing, and autofit | borders, conditional formatting, merged cells, and richer presentation workflows |
 | Data validation and conditional formatting | Future | not implemented yet | inspect and manage validation rules, conditional formatting, and overwrite-safety signals |
 | Charts and shapes | Future | not implemented yet | inspect and manipulate charts, images, drawing shapes, and related presentation objects |
 | Pivot tables and slicers | Future | not implemented yet | inspect and manipulate pivots, caches, timelines, and slicers |
 | Import / export workflows | Future | not implemented yet | CSV/JSON export, import helpers, snapshots, and rollback-friendly interchange workflows |
-| Workbook protection / visibility / layout | Future | not implemented yet | workbook/worksheet protection, visibility, window/layout, and related structural controls |
+| Workbook protection / window layout | Future | not implemented yet | workbook-level protection, window/layout, and related structural controls beyond current worksheet visibility/layout |
 | VBA project manipulation | Future | not implemented yet | inspect and edit VBA projects/modules so agents can generate small repetitive scripts or workbook-side functionality when useful |
 
 ## MCP launch and discovery
@@ -169,7 +169,7 @@ The branding overlay is meant to rewrite the human-facing files after the earlie
 
 ## Near-term priorities
 
-1. expand the next workbook edit families beyond the formula/calculation baseline, especially formatting and broader worksheet/workbook structure operations
-2. improve attached-session unsafe-UI detection before widening live-workbook mutation further
-3. decide whether mutation approval should evolve into a stronger coordination model for concurrent human and agent editing
-4. keep packaging the remaining workbook-surface roadmap into small, mock-first slices with opt-in live validation
+1. improve attached-session unsafe-UI detection now that formatting and worksheet layout mutations are live on the bridge surface
+2. decide whether mutation approval should evolve into a stronger coordination model for concurrent human and agent editing
+3. package the next workbook-surface slices after the new workbook-polish baseline, especially validation, workbook-layout, and richer dependency-aware workflows
+4. keep using runtime logging during live workbook trials and refine fields based on real regressions

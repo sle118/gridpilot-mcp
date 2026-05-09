@@ -12,6 +12,10 @@ namespace ExcelMcp.ComAdapter.Interop;
 [SupportedOSPlatform("windows")]
 internal sealed class ComWorkbookHandle : IWorkbookHandle
 {
+    private const int ExcelPatternNone = -4142;
+    private const int ExcelPatternSolid = 1;
+    private const int ExcelColorIndexNone = -4142;
+
     private readonly object _workbook;
     private readonly IGridPilotLogger _logger;
     private readonly bool _closeOnDispose;
@@ -105,14 +109,19 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         try
         {
             var summaries = new List<SheetSummary>();
+            var index = 0;
             foreach (var sheet in ComDispatch.Enumerate(sheets))
             {
                 try
                 {
+                    index++;
+                    var visibility = GetVisibilityName(GetOptionalProperty(sheet, "Visible"));
                     summaries.Add(new SheetSummary(
                         Name: GetStringProperty(sheet, "Name"),
                         Kind: GetOptionalProperty(sheet, "Type")?.ToString() ?? "Worksheet",
-                        Visible: IsVisible(GetOptionalProperty(sheet, "Visible"))));
+                        Visible: string.Equals(visibility, "visible", StringComparison.Ordinal),
+                        Visibility: visibility,
+                        Index: index));
                 }
                 finally
                 {
@@ -618,6 +627,142 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
+    public Task MoveWorksheetAsync(WorksheetMoveRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? anchor = null;
+        try
+        {
+            worksheet = FindWorksheetByName(request.SheetName)
+                ?? throw new InvalidOperationException($"Worksheet '{request.SheetName}' was not found.");
+
+            if (string.Equals(request.Position, "first", StringComparison.OrdinalIgnoreCase))
+            {
+                anchor = GetWorksheetByIndex(1);
+                if (anchor is not null && SameWorksheet(worksheet, anchor))
+                {
+                    return Task.CompletedTask;
+                }
+
+                ComDispatch.InvokeMethod(worksheet, "Move", anchor, Type.Missing);
+                return Task.CompletedTask;
+            }
+
+            if (string.Equals(request.Position, "last", StringComparison.OrdinalIgnoreCase))
+            {
+                anchor = GetWorksheetByIndex(GetWorksheetCount());
+                if (anchor is not null && SameWorksheet(worksheet, anchor))
+                {
+                    return Task.CompletedTask;
+                }
+
+                ComDispatch.InvokeMethod(worksheet, "Move", Type.Missing, anchor);
+                return Task.CompletedTask;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.BeforeSheetName))
+            {
+                anchor = FindWorksheetByName(request.BeforeSheetName!)
+                    ?? throw new InvalidOperationException($"Worksheet '{request.BeforeSheetName}' was not found.");
+                if (SameWorksheet(worksheet, anchor))
+                {
+                    return Task.CompletedTask;
+                }
+
+                ComDispatch.InvokeMethod(worksheet, "Move", anchor, Type.Missing);
+                return Task.CompletedTask;
+            }
+
+            anchor = FindWorksheetByName(request.AfterSheetName!)
+                ?? throw new InvalidOperationException($"Worksheet '{request.AfterSheetName}' was not found.");
+            if (SameWorksheet(worksheet, anchor))
+            {
+                return Task.CompletedTask;
+            }
+
+            ComDispatch.InvokeMethod(worksheet, "Move", Type.Missing, anchor);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(anchor);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task CopyWorksheetAsync(WorksheetCopyRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (FindWorksheetByName(request.NewSheetName) is { } existing)
+        {
+            ComDispatch.ReleaseIfComObject(existing);
+            throw new InvalidOperationException($"Worksheet '{request.NewSheetName}' already exists.");
+        }
+
+        object? worksheet = null;
+        object? anchor = null;
+        object? copiedWorksheet = null;
+        try
+        {
+            worksheet = FindWorksheetByName(request.SheetName)
+                ?? throw new InvalidOperationException($"Worksheet '{request.SheetName}' was not found.");
+
+            if (string.Equals(request.Position, "first", StringComparison.OrdinalIgnoreCase))
+            {
+                anchor = GetWorksheetByIndex(1);
+                ComDispatch.InvokeMethod(worksheet, "Copy", anchor, Type.Missing);
+            }
+            else if (string.Equals(request.Position, "last", StringComparison.OrdinalIgnoreCase))
+            {
+                anchor = GetWorksheetByIndex(GetWorksheetCount());
+                ComDispatch.InvokeMethod(worksheet, "Copy", Type.Missing, anchor);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.BeforeSheetName))
+            {
+                anchor = FindWorksheetByName(request.BeforeSheetName!)
+                    ?? throw new InvalidOperationException($"Worksheet '{request.BeforeSheetName}' was not found.");
+                ComDispatch.InvokeMethod(worksheet, "Copy", anchor, Type.Missing);
+            }
+            else
+            {
+                anchor = FindWorksheetByName(request.AfterSheetName!)
+                    ?? throw new InvalidOperationException($"Worksheet '{request.AfterSheetName}' was not found.");
+                ComDispatch.InvokeMethod(worksheet, "Copy", Type.Missing, anchor);
+            }
+
+            copiedWorksheet = GetWorksheetByNameOrActive(request.NewSheetName);
+            ComDispatch.SetProperty(copiedWorksheet, "Name", request.NewSheetName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(copiedWorksheet);
+            ComDispatch.ReleaseIfComObject(anchor);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task SetWorksheetVisibilityAsync(WorksheetVisibilityRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var worksheet = FindWorksheetByName(request.SheetName)
+            ?? throw new InvalidOperationException($"Worksheet '{request.SheetName}' was not found.");
+
+        try
+        {
+            ComDispatch.SetProperty(worksheet, "Visible", GetVisibilityValue(request.Visibility));
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
     public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -980,6 +1125,28 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
     }
 
+    public Task<RangeFormatData> ReadRangeFormatAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            return Task.FromResult(ReadRangeFormatData(
+                range!,
+                ComDispatch.GetProperty<string>(worksheet, "Name"),
+                GetOptionalProperty(range!, "Address")?.ToString() ?? address));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
     public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -1052,6 +1219,153 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         }
         finally
         {
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task WriteRangeFormatAsync(string address, RangeFormatPatch format, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+        object? font = null;
+        object? interior = null;
+        object? entireRow = null;
+        object? entireColumn = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+
+            if (format.NumberFormat is not null)
+            {
+                ComDispatch.SetProperty(range!, "NumberFormat", format.NumberFormat);
+            }
+
+            if (format.HorizontalAlignment is not null)
+            {
+                ComDispatch.SetProperty(range!, "HorizontalAlignment", GetHorizontalAlignmentValue(format.HorizontalAlignment));
+            }
+
+            if (format.VerticalAlignment is not null)
+            {
+                ComDispatch.SetProperty(range!, "VerticalAlignment", GetVerticalAlignmentValue(format.VerticalAlignment));
+            }
+
+            if (format.WrapText is not null)
+            {
+                ComDispatch.SetProperty(range!, "WrapText", format.WrapText.Value);
+            }
+
+            if (format.FontName is not null || format.FontSize is not null || format.Bold is not null || format.Italic is not null || format.FontColor is not null)
+            {
+                font = ComDispatch.GetProperty<object>(range!, "Font");
+                if (format.FontName is not null)
+                {
+                    ComDispatch.SetProperty(font, "Name", format.FontName);
+                }
+
+                if (format.FontSize is not null)
+                {
+                    ComDispatch.SetProperty(font, "Size", format.FontSize.Value);
+                }
+
+                if (format.Bold is not null)
+                {
+                    ComDispatch.SetProperty(font, "Bold", format.Bold.Value);
+                }
+
+                if (format.Italic is not null)
+                {
+                    ComDispatch.SetProperty(font, "Italic", format.Italic.Value);
+                }
+
+                if (format.FontColor is not null)
+                {
+                    ComDispatch.SetProperty(font, "Color", ParseColorHex(format.FontColor));
+                }
+            }
+
+            if (format.HasFill is false || format.FillColor is not null || format.HasFill is true)
+            {
+                interior = ComDispatch.GetProperty<object>(range!, "Interior");
+                if (format.HasFill is false)
+                {
+                    ComDispatch.SetProperty(interior, "Pattern", ExcelPatternNone);
+                    ComDispatch.SetProperty(interior, "ColorIndex", ExcelColorIndexNone);
+                }
+                else
+                {
+                    ComDispatch.SetProperty(interior, "Pattern", ExcelPatternSolid);
+                    if (format.FillColor is not null)
+                    {
+                        ComDispatch.SetProperty(interior, "Color", ParseColorHex(format.FillColor));
+                    }
+                }
+            }
+
+            if (format.RowHeight is not null)
+            {
+                entireRow = ComDispatch.GetProperty<object>(range!, "EntireRow");
+                ComDispatch.SetProperty(entireRow, "RowHeight", format.RowHeight.Value);
+            }
+
+            if (format.ColumnWidth is not null)
+            {
+                entireColumn = ComDispatch.GetProperty<object>(range!, "EntireColumn");
+                ComDispatch.SetProperty(entireColumn, "ColumnWidth", format.ColumnWidth.Value);
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(entireColumn);
+            ComDispatch.ReleaseIfComObject(entireRow);
+            ComDispatch.ReleaseIfComObject(interior);
+            ComDispatch.ReleaseIfComObject(font);
+            ComDispatch.ReleaseIfComObject(range);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    public Task AutofitRangeAsync(string address, string dimension, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        object? worksheet = null;
+        object? range = null;
+        object? entireRow = null;
+        object? entireColumn = null;
+
+        try
+        {
+            worksheet = GetWorksheet(sheetName);
+            range = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+
+            if (string.Equals(dimension, "rows", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(dimension, "both", StringComparison.OrdinalIgnoreCase))
+            {
+                entireRow = ComDispatch.GetProperty<object>(range!, "EntireRow");
+                ComDispatch.InvokeMethod(entireRow, "AutoFit");
+            }
+
+            if (string.Equals(dimension, "columns", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(dimension, "both", StringComparison.OrdinalIgnoreCase))
+            {
+                entireColumn = ComDispatch.GetProperty<object>(range!, "EntireColumn");
+                ComDispatch.InvokeMethod(entireColumn, "AutoFit");
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(entireColumn);
+            ComDispatch.ReleaseIfComObject(entireRow);
             ComDispatch.ReleaseIfComObject(range);
             ComDispatch.ReleaseIfComObject(worksheet);
         }
@@ -1413,6 +1727,35 @@ in
         return null;
     }
 
+    private object? GetWorksheetByIndex(int index)
+    {
+        var worksheets = GetCollection(_workbook, "Worksheets");
+        try
+        {
+            if (index < 1 || index > ComDispatch.GetProperty<int>(worksheets, "Count"))
+            {
+                return null;
+            }
+
+            return ComDispatch.GetProperty<object>(worksheets, "Item", index);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheets);
+        }
+    }
+
+    private object GetWorksheetByNameOrActive(string preferredName)
+    {
+        var preferred = FindWorksheetByName(preferredName);
+        if (preferred is not null)
+        {
+            return preferred;
+        }
+
+        return ComDispatch.GetProperty<object>(_workbook, "ActiveSheet");
+    }
+
     private int GetWorksheetCount()
     {
         var worksheets = GetCollection(_workbook, "Worksheets");
@@ -1424,6 +1767,14 @@ in
         {
             ComDispatch.ReleaseIfComObject(worksheets);
         }
+    }
+
+    private static bool SameWorksheet(object left, object right)
+    {
+        return string.Equals(
+            GetOptionalProperty(left, "Name")?.ToString(),
+            GetOptionalProperty(right, "Name")?.ToString(),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildMashupConnectionString(string queryName) =>
@@ -1700,6 +2051,244 @@ in
             "#UNKNOWN!" => "#UNKNOWN!",
             "#BUSY!" => "#BUSY!",
             _ => null
+        };
+
+    private static RangeFormatData ReadRangeFormatData(object range, string sheetName, string address)
+    {
+        object? font = null;
+        object? interior = null;
+        try
+        {
+            font = ComDispatch.GetProperty<object>(range, "Font");
+            interior = ComDispatch.GetProperty<object>(range, "Interior");
+
+            var mixedProperties = new List<string>();
+            var numberFormat = ReadStringFormatProperty(range, "NumberFormat", "numberFormat", mixedProperties);
+            var fontName = ReadStringFormatProperty(font, "Name", "fontName", mixedProperties);
+            var fontSize = ReadDoubleFormatProperty(font, "Size", "fontSize", mixedProperties);
+            var bold = ReadBooleanFormatProperty(font, "Bold", "bold", mixedProperties);
+            var italic = ReadBooleanFormatProperty(font, "Italic", "italic", mixedProperties);
+            var fontColor = ReadColorFormatProperty(font, "Color", "fontColor", mixedProperties);
+            var hasFill = ReadFillPresenceProperty(interior, mixedProperties);
+            var fillColor = hasFill is true
+                ? ReadColorFormatProperty(interior, "Color", "fillColor", mixedProperties)
+                : null;
+            var horizontalAlignment = ReadAlignmentFormatProperty(range, "HorizontalAlignment", "horizontalAlignment", mixedProperties, isVertical: false);
+            var verticalAlignment = ReadAlignmentFormatProperty(range, "VerticalAlignment", "verticalAlignment", mixedProperties, isVertical: true);
+            var wrapText = ReadBooleanFormatProperty(range, "WrapText", "wrapText", mixedProperties);
+            var rowHeight = ReadDoubleFormatProperty(range, "RowHeight", "rowHeight", mixedProperties);
+            var columnWidth = ReadDoubleFormatProperty(range, "ColumnWidth", "columnWidth", mixedProperties);
+
+            return new RangeFormatData(
+                sheetName,
+                address,
+                new RangeFormatSnapshot(
+                    NumberFormat: numberFormat,
+                    FontName: fontName,
+                    FontSize: fontSize,
+                    Bold: bold,
+                    Italic: italic,
+                    FontColor: fontColor,
+                    HasFill: hasFill,
+                    FillColor: fillColor,
+                    HorizontalAlignment: horizontalAlignment,
+                    VerticalAlignment: verticalAlignment,
+                    WrapText: wrapText,
+                    RowHeight: rowHeight,
+                    ColumnWidth: columnWidth),
+                mixedProperties);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(interior);
+            ComDispatch.ReleaseIfComObject(font);
+        }
+    }
+
+    private static string? ReadStringFormatProperty(object target, string propertyName, string mixedPropertyName, ICollection<string> mixedProperties)
+    {
+        var value = GetOptionalProperty(target, propertyName);
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add(mixedPropertyName);
+            return null;
+        }
+
+        return value?.ToString();
+    }
+
+    private static double? ReadDoubleFormatProperty(object target, string propertyName, string mixedPropertyName, ICollection<string> mixedProperties)
+    {
+        var value = GetOptionalProperty(target, propertyName);
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add(mixedPropertyName);
+            return null;
+        }
+
+        return value is null ? null : Convert.ToDouble(value);
+    }
+
+    private static bool? ReadBooleanFormatProperty(object target, string propertyName, string mixedPropertyName, ICollection<string> mixedProperties)
+    {
+        var value = GetOptionalProperty(target, propertyName);
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add(mixedPropertyName);
+            return null;
+        }
+
+        return value is null ? null : ToBoolean(value);
+    }
+
+    private static string? ReadColorFormatProperty(object target, string propertyName, string mixedPropertyName, ICollection<string> mixedProperties)
+    {
+        var value = GetOptionalProperty(target, propertyName);
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add(mixedPropertyName);
+            return null;
+        }
+
+        return value is null ? null : NormalizeColorValue(value);
+    }
+
+    private static bool? ReadFillPresenceProperty(object target, ICollection<string> mixedProperties)
+    {
+        var value = GetOptionalProperty(target, "Pattern");
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add("hasFill");
+            return null;
+        }
+
+        if (value is null)
+        {
+            return null;
+        }
+
+        return Convert.ToInt32(value) != ExcelPatternNone;
+    }
+
+    private static string? ReadAlignmentFormatProperty(object target, string propertyName, string mixedPropertyName, ICollection<string> mixedProperties, bool isVertical)
+    {
+        var value = GetOptionalProperty(target, propertyName);
+        if (IsMixedValue(value))
+        {
+            mixedProperties.Add(mixedPropertyName);
+            return null;
+        }
+
+        return value is null ? null : NormalizeAlignmentValue(value, isVertical);
+    }
+
+    private static bool IsMixedValue(object? value) =>
+        value is null || value == DBNull.Value;
+
+    private static string NormalizeColorValue(object value)
+    {
+        var color = Convert.ToInt32(value);
+        var red = color & 0xFF;
+        var green = (color >> 8) & 0xFF;
+        var blue = (color >> 16) & 0xFF;
+        return $"#{red:X2}{green:X2}{blue:X2}";
+    }
+
+    private static int ParseColorHex(string value)
+    {
+        var normalized = value.Trim();
+        if (!Regex.IsMatch(normalized, "^#[0-9A-Fa-f]{6}$", RegexOptions.CultureInvariant))
+        {
+            throw new InvalidOperationException($"Color '{value}' must use '#RRGGBB' format.");
+        }
+
+        var red = Convert.ToInt32(normalized.Substring(1, 2), 16);
+        var green = Convert.ToInt32(normalized.Substring(3, 2), 16);
+        var blue = Convert.ToInt32(normalized.Substring(5, 2), 16);
+        return red + (green << 8) + (blue << 16);
+    }
+
+    private static string NormalizeAlignmentValue(object value, bool isVertical)
+    {
+        var numeric = Convert.ToInt32(value);
+        return isVertical
+            ? numeric switch
+            {
+                -4160 => "top",
+                -4108 => "center",
+                -4107 => "bottom",
+                -4130 => "justify",
+                -4117 => "distributed",
+                _ => numeric.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }
+            : numeric switch
+            {
+                1 => "general",
+                -4131 => "left",
+                -4108 => "center",
+                -4152 => "right",
+                5 => "fill",
+                -4130 => "justify",
+                7 => "centerAcrossSelection",
+                -4117 => "distributed",
+                _ => numeric.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            };
+    }
+
+    private static int GetHorizontalAlignmentValue(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "general" => 1,
+            "left" => -4131,
+            "center" => -4108,
+            "right" => -4152,
+            "fill" => 5,
+            "justify" => -4130,
+            "centeracrossselection" => 7,
+            "distributed" => -4117,
+            _ => throw new InvalidOperationException($"Horizontal alignment '{value}' is not supported.")
+        };
+    }
+
+    private static int GetVerticalAlignmentValue(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "top" => -4160,
+            "center" => -4108,
+            "bottom" => -4107,
+            "justify" => -4130,
+            "distributed" => -4117,
+            _ => throw new InvalidOperationException($"Vertical alignment '{value}' is not supported.")
+        };
+    }
+
+    private static string GetVisibilityName(object? visibleValue)
+    {
+        var numeric = visibleValue switch
+        {
+            null => -1,
+            bool flag => flag ? -1 : 0,
+            _ => Convert.ToInt32(visibleValue)
+        };
+
+        return numeric switch
+        {
+            -1 => "visible",
+            0 => "hidden",
+            2 => "veryHidden",
+            _ => IsVisible(visibleValue) ? "visible" : "hidden"
+        };
+    }
+
+    private static int GetVisibilityValue(string visibility) =>
+        visibility switch
+        {
+            "visible" => -1,
+            "hidden" => 0,
+            "veryHidden" => 2,
+            _ => throw new InvalidOperationException($"Worksheet visibility '{visibility}' is not supported.")
         };
 
     private static int GetElementCount(Array values)

@@ -46,6 +46,9 @@ public sealed class McpToolServerTests
                 ToolNames.WorksheetCreate,
                 ToolNames.WorksheetRename,
                 ToolNames.WorksheetDelete,
+                ToolNames.WorksheetMove,
+                ToolNames.WorksheetCopy,
+                ToolNames.WorksheetSetVisibility,
                 ToolNames.QueryGet,
                 ToolNames.NameGet,
                 ToolNames.NameRead,
@@ -66,6 +69,9 @@ public sealed class McpToolServerTests
                 ToolNames.TableDelete,
                 ToolNames.RangeRead,
                 ToolNames.RangeWrite,
+                ToolNames.RangeGetFormat,
+                ToolNames.RangeSetFormat,
+                ToolNames.RangeAutofit,
                 ToolNames.RangeGetFormulas,
                 ToolNames.RangeSetFormulas,
                 ToolNames.RangeClear,
@@ -265,6 +271,75 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_WorksheetMove_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetMove,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet3",
+                afterSheetName = "Sheet1"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("move", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("afterSheetName").GetString());
+        var moved = Assert.Single(fakeWorkbook.MovedWorksheets);
+        Assert.Equal("Sheet3", moved.SheetName);
+        Assert.Equal("Sheet1", moved.AfterSheetName);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetCopy_DefaultsPlacementAfterSource()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetCopy,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet3",
+                newSheetName = "Sheet3 Copy"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("copy", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("Sheet3 Copy", result.StructuredContent.GetProperty("newSheetName").GetString());
+        var copied = Assert.Single(fakeWorkbook.CopiedWorksheets);
+        Assert.Equal("Sheet3", copied.AfterSheetName);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetSetVisibility_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetSetVisibility,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet3",
+                visibility = "veryHidden"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("set_visibility", result.StructuredContent.GetProperty("action").GetString());
+        Assert.Equal("veryHidden", result.StructuredContent.GetProperty("visibility").GetString());
+        Assert.Single(fakeWorkbook.WorksheetVisibilityChanges);
+    }
+
+    [Fact]
     public async Task CallToolAsync_TableDelete_ReturnsStructuredSuccess()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -335,7 +410,7 @@ public sealed class McpToolServerTests
     {
         var fakeWorkbook = new FakeWorkbookHandle
         {
-            Sheets = [new SheetSummary("Sheet1", "Worksheet", true)],
+            Sheets = [new SheetSummary("Sheet1", "Worksheet", true, "visible", 1)],
             Tables = [new TableSummary("Sheet1", "SalesTable", "$A$1:$D$2", true, "SalesQuery")],
             Queries = [new QuerySummary("SalesQuery", true, false, "let Source = 1 in Source")],
             Connections = [new ConnectionSummary("Query - SalesQuery", "1", true)]
@@ -349,6 +424,8 @@ public sealed class McpToolServerTests
         Assert.False(result.IsError);
         Assert.True(result.StructuredContent.TryGetProperty("sheets", out var sheets));
         Assert.Equal(1, sheets.GetArrayLength());
+        Assert.Equal("visible", sheets[0].GetProperty("visibility").GetString());
+        Assert.Equal(1, sheets[0].GetProperty("index").GetInt32());
         Assert.True(result.StructuredContent.TryGetProperty("queries", out var queries));
         Assert.Equal("SalesQuery", queries[0].GetProperty("name").GetString());
     }
@@ -819,6 +896,127 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_RangeGetFormat_ReturnsStructuredSnapshot()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeGetFormat,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet1",
+                address = "A1:B2"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("sheetName").GetString());
+        Assert.Equal("A1:B2", result.StructuredContent.GetProperty("address").GetString());
+        Assert.True(result.StructuredContent.GetProperty("format").GetProperty("hasFill").GetBoolean());
+        Assert.True(result.StructuredContent.GetProperty("format").GetProperty("bold").GetBoolean());
+        Assert.Equal("center", result.StructuredContent.GetProperty("format").GetProperty("horizontalAlignment").GetString());
+        Assert.Equal(0, result.StructuredContent.GetProperty("mixedProperties").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormat_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormat,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "A1:B2",
+                        format = new
+                        {
+                            numberFormat = "0.00",
+                            bold = true,
+                            fillColor = "#112233"
+                        }
+                    }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(1, result.StructuredContent.GetProperty("writeCount").GetInt32());
+        var write = Assert.Single(fakeWorkbook.WriteRangeFormatCalls);
+        Assert.Equal("0.00", write.Format.NumberFormat);
+        Assert.True(write.Format.Bold);
+        Assert.Equal("#112233", write.Format.FillColor);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormat_ParsesExplicitNoFillPatch()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormat,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "D20:E21",
+                        format = new
+                        {
+                            hasFill = false
+                        }
+                    }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        var write = Assert.Single(fakeWorkbook.WriteRangeFormatCalls);
+        Assert.False(write.Format.HasFill);
+        Assert.Null(write.Format.FillColor);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeAutofit_ReturnsStructuredSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeAutofit,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                targets = new object[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "A:C",
+                        dimension = "columns"
+                    }
+                }
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal(1, result.StructuredContent.GetProperty("targetCount").GetInt32());
+        var target = Assert.Single(fakeWorkbook.AutofitRangeCalls);
+        Assert.Equal("columns", target.Dimension);
+    }
+
+    [Fact]
     public async Task CallToolAsync_RangeGetFormulas_ReturnsStructuredValues()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -1032,6 +1230,62 @@ public sealed class McpToolServerTests
 
         Assert.True(result.IsError);
         Assert.Equal("invalid_arguments", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_WorksheetMove_ReturnsStructuredValidationFailureForAmbiguousPlacement()
+    {
+        var server = CreateServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorksheetMove,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                sheetName = "Sheet3",
+                beforeSheetName = "Sheet1",
+                position = "first"
+            }));
+
+        Assert.True(result.IsError);
+        Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("worksheet_layout_invalid", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormat_MapsStructuredSafetyFailure()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var fakeSession = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var approvalRegistry = new InMemoryAttachedMutationApprovalRegistry();
+        var server = new McpToolServer(new WorkbookService(fakeSession, new WorkbookOperationSafety(fakeSession, approvalRegistry)));
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormat,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new object[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "A1",
+                        format = new
+                        {
+                            bold = true
+                        }
+                    }
+                }
+            }));
+
+        Assert.True(result.IsError);
+        Assert.False(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("shared_session_approval_required", result.StructuredContent.GetProperty("error").GetProperty("code").GetString());
     }
 
     [Fact]

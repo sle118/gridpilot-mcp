@@ -2,17 +2,16 @@
 
 ## Immediate priorities
 
-1. Add the next mutating workbook families on top of the new range-formula baseline: recalculation/error inspection, formatting, and broader workbook-structure operations.
-2. Move to formatting and broader workbook-structure operations now that recalculation/error inspection is in place on top of the formula-range baseline.
-3. Improve unsafe UI-state detection beyond the current readiness/interactivity-plus-edit/modal heuristics now that multiple connected workbooks can coexist in one host.
-4. Decide whether the current approval lease should evolve into a stronger coordination model before broader workbook editing is exposed.
-5. Package the remaining workbook-surface wave into small backlog or delegation slices for future agents.
-6. Use the runtime logging switch during live workbook trials and refine log coverage/field choices based on the first real regression investigations.
+1. Stabilize the broadened workbook-polish baseline now that recalculation/error inspection, formatting, and worksheet layout operations are all implemented.
+2. Improve unsafe UI-state detection beyond the current readiness/interactivity-plus-edit/modal heuristics now that formatting and worksheet layout mutations are live.
+3. Decide whether the current approval lease should evolve into a stronger coordination model before even broader workbook editing is exposed.
+4. Package the next workbook-surface wave into small backlog or delegation slices for future agents, especially validation/conditional-formatting, richer workbook layout, and dependency-aware workflows.
+5. Use the runtime logging switch during live workbook trials and refine log coverage/field choices based on the first real regression investigations.
 
 ## Suggested first bounded implementation slice
 
-- one next mutating workbook workflow on top of the new persistence + worksheet/table + calculation baseline, ideally formatting or worksheet move/copy/visibility
-- mock-first tests plus opt-in live validation for the above
+- improve unsafe attached-session UI detection and refusal reasons for the broadened workbook-polish surface
+- pick the next post-polish family as a focused slice, likely validation/conditional-formatting diagnostics or broader workbook layout/protection helpers
 - keep broader shared-session coordination redesign out of the same slice
 
 ## Reference roadmap

@@ -15,6 +15,9 @@ public static class ToolNames
     public const string WorksheetCreate = "worksheet_create";
     public const string WorksheetRename = "worksheet_rename";
     public const string WorksheetDelete = "worksheet_delete";
+    public const string WorksheetMove = "worksheet_move";
+    public const string WorksheetCopy = "worksheet_copy";
+    public const string WorksheetSetVisibility = "worksheet_set_visibility";
     public const string QueryGet = "query_get";
     public const string NameGet = "name_get";
     public const string NameRead = "name_read";
@@ -35,6 +38,9 @@ public static class ToolNames
     public const string TableSetOptions = "table_set_options";
     public const string RangeRead = "range_read";
     public const string RangeWrite = "range_write";
+    public const string RangeGetFormat = "range_get_format";
+    public const string RangeSetFormat = "range_set_format";
+    public const string RangeAutofit = "range_autofit";
     public const string RangeGetFormulas = "range_get_formulas";
     public const string RangeSetFormulas = "range_set_formulas";
     public const string RangeClear = "range_clear";

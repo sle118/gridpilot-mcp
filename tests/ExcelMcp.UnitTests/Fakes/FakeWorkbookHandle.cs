@@ -17,6 +17,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<(string SheetName, string Address)> ReadRangeFormulaCalls { get; } = [];
     public List<(string SheetName, string Address, object?[,] Values)> WriteRangeCalls { get; } = [];
     public List<(string SheetName, string Address, string?[,] Formulas)> WriteRangeFormulaCalls { get; } = [];
+    public List<(string SheetName, string Address, RangeFormatPatch Format)> WriteRangeFormatCalls { get; } = [];
+    public List<(string SheetName, string Address)> ReadRangeFormatCalls { get; } = [];
+    public List<(string SheetName, string Address, string Dimension)> AutofitRangeCalls { get; } = [];
     public List<(string SheetName, string Address)> ClearRangeCalls { get; } = [];
     public List<CalculationRequest> RecalculationCalls { get; } = [];
     public List<ErrorInspectionRequest> ErrorInspectionCalls { get; } = [];
@@ -38,6 +41,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<string> CreatedWorksheets { get; } = [];
     public List<(string SheetName, string NewSheetName)> RenamedWorksheets { get; } = [];
     public List<string> DeletedWorksheets { get; } = [];
+    public List<WorksheetMoveRequest> MovedWorksheets { get; } = [];
+    public List<WorksheetCopyRequest> CopiedWorksheets { get; } = [];
+    public List<WorksheetVisibilityRequest> WorksheetVisibilityChanges { get; } = [];
 
     public Func<string, Task<QueryDefinition>> OnGetQueryAsync { get; set; } =
         name => Task.FromResult(new QueryDefinition(name, "let Source = 1 in Source"));
@@ -68,6 +74,9 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
 
     public Func<string, string?, Task<RangeData>> OnReadRangeFormulasAsync { get; set; } =
         (address, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "=1+1" } }));
+
+    public Func<string, string?, Task<RangeFormatData>> OnReadRangeFormatAsync { get; set; } =
+        (address, sheetName) => Task.FromResult(new RangeFormatData(sheetName ?? "Sheet1", address, new RangeFormatSnapshot(Bold: true, HasFill: true, FillColor: "#FFFFFF"), Array.Empty<string>()));
 
     public Func<string, string?, Task<RangeData>> OnReadNamedRangeAsync { get; set; } =
         (name, sheetName) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { "value" } }));
@@ -105,11 +114,26 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Func<string, Task> OnDeleteWorksheetAsync { get; set; } =
         _ => Task.CompletedTask;
 
+    public Func<WorksheetMoveRequest, Task> OnMoveWorksheetAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<WorksheetCopyRequest, Task> OnCopyWorksheetAsync { get; set; } =
+        _ => Task.CompletedTask;
+
+    public Func<WorksheetVisibilityRequest, Task> OnSetWorksheetVisibilityAsync { get; set; } =
+        _ => Task.CompletedTask;
+
     public Func<string, object?[,], string?, Task> OnWriteRangeAsync { get; set; } =
         (address, values, sheetName) => Task.CompletedTask;
 
     public Func<string, string?[,], string?, Task> OnWriteRangeFormulasAsync { get; set; } =
         (address, formulas, sheetName) => Task.CompletedTask;
+
+    public Func<string, RangeFormatPatch, string?, Task> OnWriteRangeFormatAsync { get; set; } =
+        (address, format, sheetName) => Task.CompletedTask;
+
+    public Func<string, string, string?, Task> OnAutofitRangeAsync { get; set; } =
+        (address, dimension, sheetName) => Task.CompletedTask;
 
     public Func<string, string?, Task> OnClearRangeContentsAsync { get; set; } =
         (address, sheetName) => Task.CompletedTask;
@@ -179,6 +203,12 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         ReadRangeFormulaCalls.Add((sheetName ?? "Sheet1", address));
         return OnReadRangeFormulasAsync(address, sheetName);
+    }
+
+    public Task<RangeFormatData> ReadRangeFormatAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        ReadRangeFormatCalls.Add((sheetName ?? "Sheet1", address));
+        return OnReadRangeFormatAsync(address, sheetName);
     }
 
     public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) =>
@@ -256,6 +286,24 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return OnDeleteWorksheetAsync(sheetName);
     }
 
+    public Task MoveWorksheetAsync(WorksheetMoveRequest request, CancellationToken cancellationToken = default)
+    {
+        MovedWorksheets.Add(request);
+        return OnMoveWorksheetAsync(request);
+    }
+
+    public Task CopyWorksheetAsync(WorksheetCopyRequest request, CancellationToken cancellationToken = default)
+    {
+        CopiedWorksheets.Add(request);
+        return OnCopyWorksheetAsync(request);
+    }
+
+    public Task SetWorksheetVisibilityAsync(WorksheetVisibilityRequest request, CancellationToken cancellationToken = default)
+    {
+        WorksheetVisibilityChanges.Add(request);
+        return OnSetWorksheetVisibilityAsync(request);
+    }
+
     public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         WriteRangeCalls.Add((sheetName ?? "Sheet1", address, values));
@@ -266,6 +314,18 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     {
         WriteRangeFormulaCalls.Add((sheetName ?? "Sheet1", address, formulas));
         return OnWriteRangeFormulasAsync(address, formulas, sheetName);
+    }
+
+    public Task WriteRangeFormatAsync(string address, RangeFormatPatch format, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        WriteRangeFormatCalls.Add((sheetName ?? "Sheet1", address, format));
+        return OnWriteRangeFormatAsync(address, format, sheetName);
+    }
+
+    public Task AutofitRangeAsync(string address, string dimension, string? sheetName = null, CancellationToken cancellationToken = default)
+    {
+        AutofitRangeCalls.Add((sheetName ?? "Sheet1", address, dimension));
+        return OnAutofitRangeAsync(address, dimension, sheetName);
     }
 
     public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)

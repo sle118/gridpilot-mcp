@@ -371,6 +371,177 @@ public sealed class WorkbookService
         }
     }
 
+    public async Task<WorksheetLayoutMutationResult> MoveWorksheetAsync(
+        string workbookPath,
+        WorksheetMoveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var normalizedRequest = ValidateWorksheetMoveRequest(request, out var validationError);
+        if (validationError is not null)
+        {
+            return new WorksheetLayoutMutationResult(false, workbookPath, request.SheetName, "move", Error: validationError);
+        }
+        var validRequest = normalizedRequest!;
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetLayoutMutationResult(
+                false,
+                workbookPath,
+                validRequest.SheetName,
+                "move",
+                BeforeSheetName: validRequest.BeforeSheetName,
+                AfterSheetName: validRequest.AfterSheetName,
+                Position: validRequest.Position,
+                Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.MoveWorksheetAsync(validRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_moved", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName,
+                ["beforeSheetName"] = validRequest.BeforeSheetName,
+                ["afterSheetName"] = validRequest.AfterSheetName,
+                ["position"] = validRequest.Position
+            });
+            return new WorksheetLayoutMutationResult(
+                true,
+                workbookPath,
+                validRequest.SheetName,
+                "move",
+                BeforeSheetName: validRequest.BeforeSheetName,
+                AfterSheetName: validRequest.AfterSheetName,
+                Position: validRequest.Position);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_move_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName
+            }, ex);
+            return BuildWorksheetLayoutMutationError(workbookPath, validRequest.SheetName, "move", null, validRequest.BeforeSheetName, validRequest.AfterSheetName, validRequest.Position, null, ex);
+        }
+    }
+
+    public async Task<WorksheetLayoutMutationResult> CopyWorksheetAsync(
+        string workbookPath,
+        WorksheetCopyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var normalizedRequest = ValidateWorksheetCopyRequest(request, out var validationError);
+        if (validationError is not null)
+        {
+            return new WorksheetLayoutMutationResult(false, workbookPath, request.SheetName, "copy", request.NewSheetName, Error: validationError);
+        }
+        var validRequest = normalizedRequest!;
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetLayoutMutationResult(
+                false,
+                workbookPath,
+                validRequest.SheetName,
+                "copy",
+                validRequest.NewSheetName,
+                validRequest.BeforeSheetName,
+                validRequest.AfterSheetName,
+                validRequest.Position,
+                Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.CopyWorksheetAsync(validRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_copied", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName,
+                ["newSheetName"] = validRequest.NewSheetName,
+                ["beforeSheetName"] = validRequest.BeforeSheetName,
+                ["afterSheetName"] = validRequest.AfterSheetName,
+                ["position"] = validRequest.Position
+            });
+            return new WorksheetLayoutMutationResult(
+                true,
+                workbookPath,
+                validRequest.SheetName,
+                "copy",
+                validRequest.NewSheetName,
+                validRequest.BeforeSheetName,
+                validRequest.AfterSheetName,
+                validRequest.Position);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_copy_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName,
+                ["newSheetName"] = validRequest.NewSheetName
+            }, ex);
+            return BuildWorksheetLayoutMutationError(workbookPath, validRequest.SheetName, "copy", validRequest.NewSheetName, validRequest.BeforeSheetName, validRequest.AfterSheetName, validRequest.Position, null, ex);
+        }
+    }
+
+    public async Task<WorksheetLayoutMutationResult> SetWorksheetVisibilityAsync(
+        string workbookPath,
+        WorksheetVisibilityRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var normalizedRequest = ValidateWorksheetVisibilityRequest(request, out var validationError);
+        if (validationError is not null)
+        {
+            return new WorksheetLayoutMutationResult(false, workbookPath, request.SheetName, "set_visibility", Visibility: NormalizeOptional(request.Visibility), Error: validationError);
+        }
+        var validRequest = normalizedRequest!;
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorksheetLayoutMutationResult(false, workbookPath, validRequest.SheetName, "set_visibility", Visibility: validRequest.Visibility, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SetWorksheetVisibilityAsync(validRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_visibility_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName,
+                ["visibility"] = validRequest.Visibility
+            });
+            return new WorksheetLayoutMutationResult(true, workbookPath, validRequest.SheetName, "set_visibility", Visibility: validRequest.Visibility);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "worksheet_visibility_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = validRequest.SheetName,
+                ["visibility"] = validRequest.Visibility
+            }, ex);
+            return BuildWorksheetLayoutMutationError(workbookPath, validRequest.SheetName, "set_visibility", null, null, null, null, validRequest.Visibility, ex);
+        }
+    }
+
     public async Task<RefreshResult> RefreshQueryAsync(string workbookPath, string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default)
     {
         options ??= new RefreshOptions();
@@ -539,6 +710,47 @@ public sealed class WorkbookService
             range.SheetName,
             range.Address,
             ConvertStringValues(range.Values));
+    }
+
+    public async Task<RangeFormatReadResult> ReadRangeFormatAsync(
+        string workbookPath,
+        string sheetName,
+        string address,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            var range = await workbook.ReadRangeFormatAsync(address, sheetName, cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "range_format_read", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = range.SheetName,
+                ["address"] = range.Address,
+                ["mixedPropertyCount"] = range.MixedProperties.Count
+            });
+            return new RangeFormatReadResult(true, range.SheetName, range.Address, range.Format, range.MixedProperties);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "range_format_read_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["sheetName"] = sheetName,
+                ["address"] = address
+            }, ex);
+            return new RangeFormatReadResult(
+                false,
+                NormalizeOptional(sheetName) ?? string.Empty,
+                NormalizeOptional(address) ?? string.Empty,
+                new RangeFormatSnapshot(),
+                Array.Empty<string>(),
+                new OperationError(
+                    Code: "range_format_read_failed",
+                    Message: $"Failed to read formatting for range '{sheetName}!{address}'.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
     }
 
     public async Task<RangeReadResult> ReadNamedRangeAsync(
@@ -1017,6 +1229,110 @@ public sealed class WorkbookService
         }
     }
 
+    public async Task<RangeFormatWriteResult> WriteRangeFormatsAsync(
+        string workbookPath,
+        RangeFormatWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new RangeFormatWriteResult(false, workbookPath, 0, Array.Empty<string>(), safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            var appliedWrites = new List<string>(request.Writes.Count);
+            foreach (var write in request.Writes)
+            {
+                ValidateFormatPatch(write.Format, write.Identifier);
+                await workbook.WriteRangeFormatAsync(write.Address, write.Format, write.SheetName, cancellationToken);
+                appliedWrites.Add(write.Identifier);
+            }
+
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "range_formats_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["writeCount"] = appliedWrites.Count
+            });
+            return new RangeFormatWriteResult(true, workbookPath, appliedWrites.Count, appliedWrites);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "range_format_write_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["writeCount"] = request.Writes.Count
+            }, ex);
+            return new RangeFormatWriteResult(
+                false,
+                workbookPath,
+                0,
+                Array.Empty<string>(),
+                new OperationError(
+                    Code: "range_format_write_failed",
+                    Message: "Failed to set formatting for one or more workbook ranges.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
+    }
+
+    public async Task<RangeAutofitResult> AutofitRangesAsync(
+        string workbookPath,
+        RangeAutofitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new RangeAutofitResult(false, workbookPath, 0, Array.Empty<string>(), safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            var appliedTargets = new List<string>(request.Targets.Count);
+            foreach (var target in request.Targets)
+            {
+                ValidateAutofitDimension(target.Dimension, target.Identifier);
+                await workbook.AutofitRangeAsync(target.Address, NormalizeAutofitDimension(target.Dimension)!, target.SheetName, cancellationToken);
+                appliedTargets.Add(target.Identifier);
+            }
+
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "range_autofit_completed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["targetCount"] = appliedTargets.Count
+            });
+            return new RangeAutofitResult(true, workbookPath, appliedTargets.Count, appliedTargets);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "range_autofit_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["targetCount"] = request.Targets.Count
+            }, ex);
+            return new RangeAutofitResult(
+                false,
+                workbookPath,
+                0,
+                Array.Empty<string>(),
+                new OperationError(
+                    Code: "range_autofit_failed",
+                    Message: "Failed to autofit one or more workbook ranges.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
+    }
+
     public async Task<RangeClearResult> ClearRangesAsync(
         string workbookPath,
         RangeClearRequest request,
@@ -1132,6 +1448,194 @@ public sealed class WorkbookService
                 }
             }
         }
+    }
+
+    private static void ValidateFormatPatch(RangeFormatPatch format, string identifier)
+    {
+        if (format.IsEmpty)
+        {
+            throw new InvalidOperationException($"Format target '{identifier}' requires at least one formatting property.");
+        }
+
+        if (format.HasFill is false && format.FillColor is not null)
+        {
+            throw new InvalidOperationException($"Format target '{identifier}' cannot set 'fillColor' while requesting no-fill state.");
+        }
+    }
+
+    private static void ValidateAutofitDimension(string dimension, string identifier)
+    {
+        if (NormalizeAutofitDimension(dimension) is null)
+        {
+            throw new InvalidOperationException($"Autofit target '{identifier}' must use dimension 'rows', 'columns', or 'both'.");
+        }
+    }
+
+    private static string? NormalizeAutofitDimension(string? dimension)
+    {
+        var normalized = NormalizeOptional(dimension)?.ToLowerInvariant();
+        return normalized is "rows" or "columns" or "both"
+            ? normalized
+            : null;
+    }
+
+    private static WorksheetMoveRequest? ValidateWorksheetMoveRequest(WorksheetMoveRequest request, out OperationError? error)
+    {
+        var normalized = ValidatePlacement(
+            request.SheetName,
+            request.BeforeSheetName,
+            request.AfterSheetName,
+            request.Position,
+            allowNoPlacement: false,
+            out error);
+
+        return normalized is null
+            ? null
+            : new WorksheetMoveRequest(normalized.SheetName, normalized.BeforeSheetName, normalized.AfterSheetName, normalized.Position);
+    }
+
+    private static WorksheetCopyRequest? ValidateWorksheetCopyRequest(WorksheetCopyRequest request, out OperationError? error)
+    {
+        var normalizedSheetName = NormalizeOptional(request.SheetName);
+        var normalizedNewSheetName = NormalizeOptional(request.NewSheetName);
+        if (normalizedSheetName is null || normalizedNewSheetName is null)
+        {
+            error = new OperationError(
+                Code: "worksheet_copy_invalid",
+                Message: "Worksheet copy requires source and destination sheet names.",
+                Detail: "Provide both 'sheetName' and 'newSheetName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        var normalizedPlacement = ValidatePlacement(
+            normalizedSheetName,
+            request.BeforeSheetName,
+            request.AfterSheetName,
+            request.Position,
+            allowNoPlacement: true,
+            out error);
+
+        if (error is not null || normalizedPlacement is null)
+        {
+            return null;
+        }
+
+        return new WorksheetCopyRequest(
+            normalizedSheetName,
+            normalizedNewSheetName,
+            normalizedPlacement.BeforeSheetName,
+            normalizedPlacement.AfterSheetName ?? normalizedSheetName,
+            normalizedPlacement.Position);
+    }
+
+    private static WorksheetVisibilityRequest? ValidateWorksheetVisibilityRequest(WorksheetVisibilityRequest request, out OperationError? error)
+    {
+        var sheetName = NormalizeOptional(request.SheetName);
+        var visibility = NormalizeVisibility(request.Visibility);
+
+        if (sheetName is null || visibility is null)
+        {
+            error = new OperationError(
+                Code: "worksheet_set_visibility_invalid",
+                Message: "Worksheet visibility change requires a valid sheet and visibility.",
+                Detail: "Use visibility 'visible', 'hidden', or 'veryHidden'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new WorksheetVisibilityRequest(sheetName, visibility);
+    }
+
+    private static string? NormalizeVisibility(string? visibility)
+    {
+        var normalized = NormalizeOptional(visibility);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return normalized.ToLowerInvariant() switch
+        {
+            "visible" => "visible",
+            "hidden" => "hidden",
+            "veryhidden" => "veryHidden",
+            _ => null
+        };
+    }
+
+    private static WorksheetPlacement? ValidatePlacement(
+        string? sheetName,
+        string? beforeSheetName,
+        string? afterSheetName,
+        string? position,
+        bool allowNoPlacement,
+        out OperationError? error)
+    {
+        var normalizedSheetName = NormalizeOptional(sheetName);
+        var normalizedBeforeSheetName = NormalizeOptional(beforeSheetName);
+        var normalizedAfterSheetName = NormalizeOptional(afterSheetName);
+        var normalizedPosition = NormalizeOptional(position)?.ToLowerInvariant();
+
+        if (normalizedSheetName is null)
+        {
+            error = new OperationError(
+                Code: "worksheet_layout_invalid",
+                Message: "Worksheet layout operation requires a sheet name.",
+                Detail: "Provide a non-empty 'sheetName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (normalizedPosition is not null && normalizedPosition is not "first" and not "last")
+        {
+            error = new OperationError(
+                Code: "worksheet_layout_invalid",
+                Message: "Worksheet placement must use a supported position value.",
+                Detail: "Use 'first' or 'last' for the 'position' selector.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        var selectorCount = 0;
+        if (normalizedBeforeSheetName is not null)
+        {
+            selectorCount++;
+        }
+
+        if (normalizedAfterSheetName is not null)
+        {
+            selectorCount++;
+        }
+
+        if (normalizedPosition is not null)
+        {
+            selectorCount++;
+        }
+
+        if (selectorCount == 0 && !allowNoPlacement)
+        {
+            error = new OperationError(
+                Code: "worksheet_layout_invalid",
+                Message: "Worksheet placement requires exactly one selector.",
+                Detail: "Provide one of 'beforeSheetName', 'afterSheetName', or 'position'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (selectorCount > 1)
+        {
+            error = new OperationError(
+                Code: "worksheet_layout_invalid",
+                Message: "Worksheet placement is ambiguous.",
+                Detail: "Provide only one of 'beforeSheetName', 'afterSheetName', or 'position'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new WorksheetPlacement(normalizedSheetName, normalizedBeforeSheetName, normalizedAfterSheetName, normalizedPosition);
     }
 
     private static async Task ValidateTableWriteShapeAsync(
@@ -1345,6 +1849,32 @@ public sealed class WorkbookService
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
 
+    private static WorksheetLayoutMutationResult BuildWorksheetLayoutMutationError(
+        string workbookPath,
+        string sheetName,
+        string action,
+        string? newSheetName,
+        string? beforeSheetName,
+        string? afterSheetName,
+        string? position,
+        string? visibility,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            sheetName,
+            action,
+            newSheetName,
+            beforeSheetName,
+            afterSheetName,
+            position,
+            visibility,
+            new OperationError(
+                Code: $"worksheet_{action}_failed",
+                Message: $"Failed to {action.Replace('_', ' ')} worksheet '{sheetName}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
     private static WorkbookSaveResult BuildWorkbookSaveError(
         string sourceWorkbookPath,
         string workbookPath,
@@ -1390,4 +1920,5 @@ public sealed class WorkbookService
                 Source: nameof(WorkbookService)));
 
     private sealed record ScopedTarget(string Scope, string? SheetName, string? Address);
+    private sealed record WorksheetPlacement(string SheetName, string? BeforeSheetName, string? AfterSheetName, string? Position);
 }

@@ -153,6 +153,32 @@ public sealed class McpToolServer
                 ["sheetName"],
                 ("sheetName", new { type = "string" }))),
         new(
+            ToolNames.WorksheetMove,
+            "Move an existing worksheet within the workbook by relative placement.",
+            BuildTargetSchema(
+                ["sheetName"],
+                ("sheetName", new { type = "string" }),
+                ("beforeSheetName", new { type = "string" }),
+                ("afterSheetName", new { type = "string" }),
+                ("position", new { type = "string" }))),
+        new(
+            ToolNames.WorksheetCopy,
+            "Copy an existing worksheet within the same workbook and optionally reposition it.",
+            BuildTargetSchema(
+                ["sheetName", "newSheetName"],
+                ("sheetName", new { type = "string" }),
+                ("newSheetName", new { type = "string" }),
+                ("beforeSheetName", new { type = "string" }),
+                ("afterSheetName", new { type = "string" }),
+                ("position", new { type = "string" }))),
+        new(
+            ToolNames.WorksheetSetVisibility,
+            "Set worksheet visibility using Excel visible, hidden, or veryHidden states.",
+            BuildTargetSchema(
+                ["sheetName", "visibility"],
+                ("sheetName", new { type = "string" }),
+                ("visibility", new { type = "string" }))),
+        new(
             ToolNames.QueryGet,
             "Get a workbook query definition by name.",
             BuildTargetSchema(["queryName"], ("queryName", new { type = "string" }))),
@@ -305,6 +331,33 @@ public sealed class McpToolServer
                         },
                         required = new[] { "sheetName", "address", "values" }
                     }
+                }))),
+        new(
+            ToolNames.RangeGetFormat,
+            "Read compact formatting state for one rectangular workbook range.",
+            BuildTargetSchema(
+                ["sheetName", "address"],
+                ("sheetName", new { type = "string" }),
+                ("address", new { type = "string" }))),
+        new(
+            ToolNames.RangeSetFormat,
+            "Write formatting patches into one or more rectangular workbook ranges.",
+            BuildTargetSchema(
+                ["writes"],
+                ("writes", new
+                {
+                    type = "array",
+                    items = BuildRangeFormatWriteItemSchema()
+                }))),
+        new(
+            ToolNames.RangeAutofit,
+            "Autofit rows, columns, or both for one or more workbook range targets.",
+            BuildTargetSchema(
+                ["targets"],
+                ("targets", new
+                {
+                    type = "array",
+                    items = BuildRangeAutofitTargetSchema()
                 }))),
         new(
             ToolNames.RangeGetFormulas,
@@ -536,6 +589,9 @@ public sealed class McpToolServer
             ToolNames.WorksheetCreate => HandleWorksheetCreateAsync(arguments, cancellationToken),
             ToolNames.WorksheetRename => HandleWorksheetRenameAsync(arguments, cancellationToken),
             ToolNames.WorksheetDelete => HandleWorksheetDeleteAsync(arguments, cancellationToken),
+            ToolNames.WorksheetMove => HandleWorksheetMoveAsync(arguments, cancellationToken),
+            ToolNames.WorksheetCopy => HandleWorksheetCopyAsync(arguments, cancellationToken),
+            ToolNames.WorksheetSetVisibility => HandleWorksheetSetVisibilityAsync(arguments, cancellationToken),
             ToolNames.QueryGet => HandleGetQueryAsync(arguments, cancellationToken),
             ToolNames.NameGet => HandleGetNameAsync(arguments, cancellationToken),
             ToolNames.NameRead => HandleReadNameAsync(arguments, cancellationToken),
@@ -556,6 +612,9 @@ public sealed class McpToolServer
             ToolNames.TableDelete => HandleTableDeleteAsync(arguments, cancellationToken),
             ToolNames.RangeRead => HandleRangeReadAsync(arguments, cancellationToken),
             ToolNames.RangeWrite => HandleRangeWriteAsync(arguments, cancellationToken),
+            ToolNames.RangeGetFormat => HandleRangeGetFormatAsync(arguments, cancellationToken),
+            ToolNames.RangeSetFormat => HandleRangeSetFormatAsync(arguments, cancellationToken),
+            ToolNames.RangeAutofit => HandleRangeAutofitAsync(arguments, cancellationToken),
             ToolNames.RangeGetFormulas => HandleRangeGetFormulasAsync(arguments, cancellationToken),
             ToolNames.RangeSetFormulas => HandleRangeSetFormulasAsync(arguments, cancellationToken),
             ToolNames.RangeClear => HandleRangeClearAsync(arguments, cancellationToken),
@@ -663,6 +722,47 @@ public sealed class McpToolServer
         return await _workbookServices.ExecuteAsync(
             target,
             resolved => resolved.Service.DeleteWorksheetAsync(resolved.WorkbookPath, sheetName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetMoveAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new WorksheetMoveRequest(
+            SheetName: GetRequiredString(arguments, "sheetName"),
+            BeforeSheetName: GetOptionalString(arguments, "beforeSheetName"),
+            AfterSheetName: GetOptionalString(arguments, "afterSheetName"),
+            Position: GetOptionalString(arguments, "position"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.MoveWorksheetAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetCopyAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new WorksheetCopyRequest(
+            SheetName: GetRequiredString(arguments, "sheetName"),
+            NewSheetName: GetRequiredString(arguments, "newSheetName"),
+            BeforeSheetName: GetOptionalString(arguments, "beforeSheetName"),
+            AfterSheetName: GetOptionalString(arguments, "afterSheetName"),
+            Position: GetOptionalString(arguments, "position"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.CopyWorksheetAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorksheetSetVisibilityAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new WorksheetVisibilityRequest(
+            SheetName: GetRequiredString(arguments, "sheetName"),
+            Visibility: GetRequiredString(arguments, "visibility"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.SetWorksheetVisibilityAsync(resolved.WorkbookPath, request, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -902,6 +1002,37 @@ public sealed class McpToolServer
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<object> HandleRangeGetFormatAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var sheetName = GetRequiredString(arguments, "sheetName");
+        var address = GetRequiredString(arguments, "address");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.ReadRangeFormatAsync(resolved.WorkbookPath, sheetName, address, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleRangeSetFormatAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetRangeFormatWriteRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.WriteRangeFormatsAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleRangeAutofitAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = GetRangeAutofitRequest(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.AutofitRangesAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<object> HandleRangeGetFormulasAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -1057,6 +1188,18 @@ public sealed class McpToolServer
         return null;
     }
 
+    private static double? GetOptionalDouble(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(propertyName, out var property) &&
+            property.ValueKind == JsonValueKind.Number)
+        {
+            return property.GetDouble();
+        }
+
+        return null;
+    }
+
     private static JsonElement BuildTargetSchema(
         string[] requiredProperties,
         params (string Name, object Schema)[] properties)
@@ -1082,6 +1225,54 @@ public sealed class McpToolServer
 
     private static JsonElement BuildTargetSchema(params (string Name, object Schema)[] properties) =>
         BuildTargetSchema(Array.Empty<string>(), properties);
+
+    private static object BuildRangeFormatWriteItemSchema() =>
+        new
+        {
+            type = "object",
+            properties = new
+            {
+                sheetName = new { type = "string" },
+                address = new { type = "string" },
+                format = BuildRangeFormatPatchSchema()
+            },
+            required = new[] { "sheetName", "address", "format" }
+        };
+
+    private static object BuildRangeAutofitTargetSchema() =>
+        new
+        {
+            type = "object",
+            properties = new
+            {
+                sheetName = new { type = "string" },
+                address = new { type = "string" },
+                dimension = new { type = "string" }
+            },
+            required = new[] { "sheetName", "address", "dimension" }
+        };
+
+    private static object BuildRangeFormatPatchSchema() =>
+        new
+        {
+            type = "object",
+            properties = new
+            {
+                numberFormat = new { type = "string" },
+                fontName = new { type = "string" },
+                fontSize = new { type = "number" },
+                bold = new { type = "boolean" },
+                italic = new { type = "boolean" },
+                fontColor = new { type = "string" },
+                hasFill = new { type = "boolean" },
+                fillColor = new { type = "string" },
+                horizontalAlignment = new { type = "string" },
+                verticalAlignment = new { type = "string" },
+                wrapText = new { type = "boolean" },
+                rowHeight = new { type = "number" },
+                columnWidth = new { type = "number" }
+            }
+        };
 
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
@@ -1132,6 +1323,73 @@ public sealed class McpToolServer
         }
 
         return new RangeWriteRequest(writes);
+    }
+
+    private static RangeFormatWriteRequest GetRangeFormatWriteRequest(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("writes", out var writesElement) ||
+            writesElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "Missing required array argument 'writes'.");
+        }
+
+        var writes = new List<RangeFormatWriteTarget>();
+        foreach (var write in writesElement.EnumerateArray())
+        {
+            if (write.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each 'writes' item must be an object.");
+            }
+
+            if (!write.TryGetProperty("format", out var formatElement) || formatElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each range format write must include a 'format' object.");
+            }
+
+            writes.Add(new RangeFormatWriteTarget(
+                GetRequiredString(write, "sheetName"),
+                GetRequiredString(write, "address"),
+                ParseRangeFormatPatch(formatElement)));
+        }
+
+        if (writes.Count == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one range format write target is required.");
+        }
+
+        return new RangeFormatWriteRequest(writes);
+    }
+
+    private static RangeAutofitRequest GetRangeAutofitRequest(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("targets", out var targetsElement) ||
+            targetsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new McpToolInputException("invalid_arguments", "Missing required array argument 'targets'.");
+        }
+
+        var targets = new List<RangeAutofitTarget>();
+        foreach (var target in targetsElement.EnumerateArray())
+        {
+            if (target.ValueKind != JsonValueKind.Object)
+            {
+                throw new McpToolInputException("invalid_arguments", "Each 'targets' item must be an object.");
+            }
+
+            targets.Add(new RangeAutofitTarget(
+                GetRequiredString(target, "sheetName"),
+                GetRequiredString(target, "address"),
+                GetRequiredString(target, "dimension")));
+        }
+
+        if (targets.Count == 0)
+        {
+            throw new McpToolInputException("invalid_arguments", "At least one autofit target is required.");
+        }
+
+        return new RangeAutofitRequest(targets);
     }
 
     private static RangeFormulaWriteRequest GetRangeFormulaWriteRequest(JsonElement element)
@@ -1215,6 +1473,31 @@ public sealed class McpToolServer
         var address = GetOptionalString(element, "address");
         ValidateScopedTargetArguments(scope, sheetName, address);
         return new ErrorInspectionRequest(scope, sheetName, address);
+    }
+
+    private static RangeFormatPatch ParseRangeFormatPatch(JsonElement element)
+    {
+        var patch = new RangeFormatPatch(
+            NumberFormat: GetOptionalString(element, "numberFormat"),
+            FontName: GetOptionalString(element, "fontName"),
+            FontSize: GetOptionalDouble(element, "fontSize"),
+            Bold: GetOptionalBoolean(element, "bold"),
+            Italic: GetOptionalBoolean(element, "italic"),
+            FontColor: GetOptionalString(element, "fontColor"),
+            HasFill: GetOptionalBoolean(element, "hasFill"),
+            FillColor: GetOptionalString(element, "fillColor"),
+            HorizontalAlignment: GetOptionalString(element, "horizontalAlignment"),
+            VerticalAlignment: GetOptionalString(element, "verticalAlignment"),
+            WrapText: GetOptionalBoolean(element, "wrapText"),
+            RowHeight: GetOptionalDouble(element, "rowHeight"),
+            ColumnWidth: GetOptionalDouble(element, "columnWidth"));
+
+        if (patch.IsEmpty)
+        {
+            throw new McpToolInputException("invalid_arguments", "Each range format patch must include at least one formatting property.");
+        }
+
+        return patch;
     }
 
     private static void ValidateScopedTargetArguments(string scope, string? sheetName, string? address)

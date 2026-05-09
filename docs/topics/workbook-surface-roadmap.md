@@ -24,9 +24,11 @@ The bridge currently supports:
 - table create, resize, append, replace, delete, and core options updates
 - rectangular range read
 - multi-range rectangular value write
+- compact range formatting read/write, row and column sizing, and autofit
 - rectangular formula read/write and clear-contents range operations
 - workbook/worksheet/range recalculation
 - workbook/worksheet/range error inspection with compact diagnostic hit lists
+- worksheet move, copy, reordering, and three-state visibility control
 
 ## Next five surfaces to prioritize
 
@@ -35,14 +37,13 @@ The bridge currently supports:
    - keep read operations broadly allowed
    - tighten refusal reasons for attached mutating tools
 
-2. Formatting and presentation controls
-   - inspect and change basic formatting
-   - support common report-polish scenarios
-   - keep formatting behind the same safety expectations as other mutating operations
+2. Data quality and validation surfaces
+   - inspect and manage validation rules
+   - inspect conditional formatting presence
+   - support overwrite-safety and worksheet hygiene checks
 
-3. Workbook structure operations
-   - move or copy worksheets
-   - manage visibility and workbook working layout more intentionally
+3. Broader workbook structure operations
+   - extend beyond current worksheet move/copy/visibility into workbook-level protection, visibility, and layout helpers
    - support broader workbook orchestration while keeping COM isolated
 
 ## Following five surfaces after that
@@ -52,18 +53,16 @@ The bridge currently supports:
    - create or update connections
    - inspect dependency relationships between queries, connections, tables, and load targets
 
-5. Richer calculation-aware worksheet operations
+5. Richer formatting and presentation controls
+   - add borders, merged-cell handling, style helpers, or higher-level report-polish workflows on top of the new compact baseline
+
+6. Richer calculation-aware worksheet operations
    - add formula-error inspection summaries, smarter targeting shortcuts, or calculation-state-aware diagnostics on top of the new baseline
    - explore whether calculation/reporting workflows should remain worksheet-centric or expand into broader workbook patching helpers
 
-6. Named-structure and dependency workflows
+7. Named-structure and dependency workflows
    - deepen name, table, query, and connection dependency inspection
    - support more coordinated workbook troubleshooting against stable structures rather than raw coordinates
-
-7. Data quality and validation surfaces
-   - inspect and manage validation rules
-   - inspect conditional formatting presence
-   - support overwrite-safety and worksheet hygiene checks
 
 8. Structured import and export workflows
    - export ranges, tables, or query outputs to CSV or JSON
@@ -72,7 +71,7 @@ The bridge currently supports:
 
 ## Why this order
 
-The current recommendation is to prioritize durable data and workflow surfaces before cosmetic or highly presentation-oriented automation.
+The current recommendation is to stabilize shared-session safety after the new workbook-polish baseline, then continue expanding durable data and workflow surfaces before highly presentation-oriented automation.
 
 That means:
 
@@ -83,6 +82,6 @@ That means:
 
 ## Notes
 
-- Query formula edit, range read/write, range formula/clear operations, workbook/worksheet/range recalculation, workbook/worksheet/range error inspection, workbook persistence, worksheet lifecycle, and core table mutations are already implemented and should be treated as the baseline edit surface.
+- Query formula edit, range read/write, compact range formatting/autofit, range formula/clear operations, workbook/worksheet/range recalculation, workbook/worksheet/range error inspection, workbook persistence, worksheet lifecycle/layout, and core table mutations are already implemented and should be treated as the baseline edit surface.
 - Any newly promoted mutating surface should continue to flow through the shared-session approval and safety seam.
 - Live Excel coverage should be extended alongside each new surface, but remain opt-in.

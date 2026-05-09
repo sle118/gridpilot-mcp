@@ -1141,6 +1141,306 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task ReadRangeFormatAsync_ReturnsStructuredSnapshotAndMixedProperties()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnReadRangeFormatAsync = (address, sheetName) => Task.FromResult(
+                new RangeFormatData(
+                    sheetName ?? "Sheet1",
+                    "$A$1:$B$2",
+                    new RangeFormatSnapshot(
+                        NumberFormat: "0.00",
+                        Bold: true,
+                        HasFill: true,
+                        FillColor: "#112233"),
+                    ["fontName", "rowHeight"]))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.ReadRangeFormatAsync(@"C:\temp\book.xlsx", "Sheet1", "A1:B2");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Sheet1", result.SheetName);
+        Assert.Equal("$A$1:$B$2", result.Address);
+        Assert.Equal("0.00", result.Format.NumberFormat);
+        Assert.True(result.Format.Bold);
+        Assert.True(result.Format.HasFill);
+        Assert.Equal("#112233", result.Format.FillColor);
+        Assert.Equal(["fontName", "rowHeight"], result.MixedProperties);
+        Assert.Single(fakeWorkbook.ReadRangeFormatCalls);
+    }
+
+    [Fact]
+    public async Task ReadRangeFormatAsync_AllowsAttachedReadWithoutApproval()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.ReadRangeFormatAsync(@"C:\temp\book.xlsx", "Sheet1", "A1");
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.ReadRangeFormatCalls);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormatsAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormatWriteRequest(
+        [
+            new RangeFormatWriteTarget("Sheet1", "A1:B2", new RangeFormatPatch(NumberFormat: "0.00", Bold: true, FontColor: "#AABBCC")),
+            new RangeFormatWriteTarget("Sheet1", "C1:C3", new RangeFormatPatch(WrapText: true, RowHeight: 24d, ColumnWidth: 18d))
+        ]);
+
+        var result = await sut.WriteRangeFormatsAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.WriteCount);
+        Assert.Equal(["Sheet1!A1:B2", "Sheet1!C1:C3"], result.AppliedWrites);
+        Assert.Equal(2, fakeWorkbook.WriteRangeFormatCalls.Count);
+        Assert.Equal("#AABBCC", fakeWorkbook.WriteRangeFormatCalls[0].Format.FontColor);
+        Assert.True(fakeWorkbook.WriteRangeFormatCalls[1].Format.WrapText);
+        Assert.Equal(24d, fakeWorkbook.WriteRangeFormatCalls[1].Format.RowHeight);
+        Assert.Equal(18d, fakeWorkbook.WriteRangeFormatCalls[1].Format.ColumnWidth);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormatsAsync_AllowsExplicitNoFillPatch()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormatWriteRequest(
+        [
+            new RangeFormatWriteTarget("Sheet1", "D20:E21", new RangeFormatPatch(HasFill: false))
+        ]);
+
+        var result = await sut.WriteRangeFormatsAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        var write = Assert.Single(fakeWorkbook.WriteRangeFormatCalls);
+        Assert.False(write.Format.HasFill);
+        Assert.Null(write.Format.FillColor);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormatsAsync_RejectsEmptyPatchWithoutWriting()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormatWriteRequest(
+        [
+            new RangeFormatWriteTarget("Sheet1", "A1", new RangeFormatPatch())
+        ]);
+
+        var result = await sut.WriteRangeFormatsAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_format_write_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormatCalls);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormatsAsync_RejectsFillColorWhenNoFillWasRequested()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeFormatWriteRequest(
+        [
+            new RangeFormatWriteTarget("Sheet1", "A1", new RangeFormatPatch(HasFill: false, FillColor: "#FFFFFF"))
+        ]);
+
+        var result = await sut.WriteRangeFormatsAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_format_write_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormatCalls);
+    }
+
+    [Fact]
+    public async Task WriteRangeFormatsAsync_RequiresApprovalInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+        var request = new RangeFormatWriteRequest(
+        [
+            new RangeFormatWriteTarget("Sheet1", "A1", new RangeFormatPatch(Bold: true))
+        ]);
+
+        var result = await sut.WriteRangeFormatsAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WriteRangeFormatCalls);
+    }
+
+    [Fact]
+    public async Task AutofitRangesAsync_NormalizesDimensionAndSavesWorkbook()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeAutofitRequest(
+        [
+            new RangeAutofitTarget("Sheet1", "A:C", "BOTH")
+        ]);
+
+        var result = await sut.AutofitRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.AutofitRangeCalls);
+        Assert.Equal("both", fakeWorkbook.AutofitRangeCalls[0].Dimension);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task AutofitRangesAsync_RejectsInvalidDimension()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+        var request = new RangeAutofitRequest(
+        [
+            new RangeAutofitTarget("Sheet1", "A:C", "diagonal")
+        ]);
+
+        var result = await sut.AutofitRangesAsync(@"C:\temp\book.xlsx", request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("range_autofit_failed", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.AutofitRangeCalls);
+    }
+
+    [Fact]
+    public async Task MoveWorksheetAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.MoveWorksheetAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetMoveRequest("Sheet3", AfterSheetName: "Sheet1"));
+
+        Assert.True(result.Succeeded);
+        var moved = Assert.Single(fakeWorkbook.MovedWorksheets);
+        Assert.Equal("Sheet3", moved.SheetName);
+        Assert.Equal("Sheet1", moved.AfterSheetName);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task MoveWorksheetAsync_RejectsAmbiguousPlacement()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.MoveWorksheetAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetMoveRequest("Sheet3", BeforeSheetName: "Sheet1", Position: "first"));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("worksheet_layout_invalid", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.MovedWorksheets);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CopyWorksheetAsync_DefaultsPlacementAfterSource()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CopyWorksheetAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetCopyRequest("Sheet3", "Sheet3 Copy"));
+
+        Assert.True(result.Succeeded);
+        var copied = Assert.Single(fakeWorkbook.CopiedWorksheets);
+        Assert.Equal("Sheet3", copied.SheetName);
+        Assert.Equal("Sheet3 Copy", copied.NewSheetName);
+        Assert.Equal("Sheet3", copied.AfterSheetName);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CopyWorksheetAsync_ReturnsStructuredFailureForDuplicateName()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnCopyWorksheetAsync = _ => throw new InvalidOperationException("A worksheet named 'Sheet3 Copy' already exists.")
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CopyWorksheetAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetCopyRequest("Sheet3", "Sheet3 Copy"));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("worksheet_copy_failed", result.Error?.Code);
+        Assert.Equal(0, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetWorksheetVisibilityAsync_NormalizesVeryHiddenAndSavesWorkbook()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.SetWorksheetVisibilityAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetVisibilityRequest("Sheet3", "VeryHidden"));
+
+        Assert.True(result.Succeeded);
+        var change = Assert.Single(fakeWorkbook.WorksheetVisibilityChanges);
+        Assert.Equal("veryHidden", change.Visibility);
+        Assert.Equal("veryHidden", result.Visibility);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task SetWorksheetVisibilityAsync_RequiresApprovalInAttachedMode()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var sut = new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry()));
+
+        var result = await sut.SetWorksheetVisibilityAsync(
+            @"C:\temp\book.xlsx",
+            new WorksheetVisibilityRequest("Sheet3", "hidden"));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("shared_session_approval_required", result.Error?.Code);
+        Assert.Empty(fakeWorkbook.WorksheetVisibilityChanges);
+    }
+
+    [Fact]
     public async Task WriteRangesAsync_SavesWorkbookOnSuccess()
     {
         var fakeWorkbook = new FakeWorkbookHandle
@@ -1367,6 +1667,9 @@ public sealed class WorkbookServiceTests
         public Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MoveWorksheetAsync(WorksheetMoveRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CopyWorksheetAsync(WorksheetCopyRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SetWorksheetVisibilityAsync(WorksheetVisibilityRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableDetailResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), 0, 0, true, false, false, null));
         public Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default) => Task.FromResult(new TableReadResult(tableName, "Sheet1", "$A$1", Array.Empty<string>(), Array.Empty<IReadOnlyList<object?>>(), false));
         public Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -1379,9 +1682,12 @@ public sealed class WorkbookServiceTests
         public Task<IReadOnlyList<ErrorInspectionHit>> InspectErrorsAsync(ErrorInspectionRequest request, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ErrorInspectionHit>>(Array.Empty<ErrorInspectionHit>());
         public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { null } }));
         public Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", address, new object?[,] { { "=1+1" } }));
+        public Task<RangeFormatData> ReadRangeFormatAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeFormatData(sheetName ?? "Sheet1", address, new RangeFormatSnapshot(), Array.Empty<string>()));
         public Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new RangeData(sheetName ?? "Sheet1", "$A$1", new object?[,] { { null } }));
         public Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task WriteRangeFormatAsync(string address, RangeFormatPatch format, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AutofitRangeAsync(string address, string dimension, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

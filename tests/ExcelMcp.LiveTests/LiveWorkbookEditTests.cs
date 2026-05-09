@@ -146,6 +146,155 @@ public sealed class LiveWorkbookEditTests
     }
 
     [LiveExcelFact]
+    public async Task RangeFormattingAndAutofit_PersistOnScratchCells()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        const string sheetName = "Sheet1";
+        const string address = "D20:E21";
+
+        var seed = await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, address, new object?[,]
+                {
+                    { "very long text for autofit width", "line one\nline two" },
+                    { 1234.567d, "wrapped content" }
+                })
+            ]));
+        Assert.True(seed.Succeeded);
+
+        var formatted = await context.WorkbookService.WriteRangeFormatsAsync(
+            context.WorkbookPath,
+            new RangeFormatWriteRequest(
+            [
+                new RangeFormatWriteTarget(
+                    sheetName,
+                    address,
+                    new RangeFormatPatch(
+                        NumberFormat: "0.00",
+                        Bold: true,
+                        Italic: true,
+                        FontColor: "#112233",
+                        FillColor: "#AABBCC",
+                        HorizontalAlignment: "center",
+                        VerticalAlignment: "bottom",
+                        WrapText: true,
+                        RowHeight: 12d,
+                        ColumnWidth: 8d))
+            ]));
+        Assert.True(formatted.Succeeded);
+
+        var beforeAutofit = await context.WorkbookService.ReadRangeFormatAsync(context.WorkbookPath, sheetName, address);
+        Assert.True(beforeAutofit.Succeeded);
+        Assert.Equal("0.00", beforeAutofit.Format.NumberFormat);
+        Assert.True(beforeAutofit.Format.Bold);
+        Assert.True(beforeAutofit.Format.Italic);
+        Assert.True(beforeAutofit.Format.HasFill);
+        Assert.Equal("#112233", beforeAutofit.Format.FontColor);
+        Assert.Equal("#AABBCC", beforeAutofit.Format.FillColor);
+        Assert.Equal("center", beforeAutofit.Format.HorizontalAlignment);
+        Assert.Equal("bottom", beforeAutofit.Format.VerticalAlignment);
+        Assert.True(beforeAutofit.Format.WrapText);
+        Assert.Equal(12d, beforeAutofit.Format.RowHeight);
+        Assert.Equal(8d, beforeAutofit.Format.ColumnWidth);
+
+        var autofit = await context.WorkbookService.AutofitRangesAsync(
+            context.WorkbookPath,
+            new RangeAutofitRequest([new RangeAutofitTarget(sheetName, address, "both")]));
+        Assert.True(autofit.Succeeded);
+
+        var afterAutofit = await context.WorkbookService.ReadRangeFormatAsync(context.WorkbookPath, sheetName, address);
+        Assert.True(afterAutofit.Succeeded);
+        Assert.NotEqual(beforeAutofit.Format.RowHeight, afterAutofit.Format.RowHeight);
+        Assert.NotEqual(beforeAutofit.Format.ColumnWidth, afterAutofit.Format.ColumnWidth);
+    }
+
+    [LiveExcelFact]
+    public async Task RangeFormatting_CanRestoreTrueNoFillState()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        const string sheetName = "Sheet1";
+        const string address = "G20:H21";
+
+        var seeded = await context.WorkbookService.WriteRangesAsync(
+            context.WorkbookPath,
+            new RangeWriteRequest(
+            [
+                new RangeWriteTarget(sheetName, address, new object?[,]
+                {
+                    { "fill", "test" },
+                    { 1d, 2d }
+                })
+            ]));
+        Assert.True(seeded.Succeeded);
+
+        var filled = await context.WorkbookService.WriteRangeFormatsAsync(
+            context.WorkbookPath,
+            new RangeFormatWriteRequest(
+            [
+                new RangeFormatWriteTarget(sheetName, address, new RangeFormatPatch(HasFill: true, FillColor: "#FFFFFF"))
+            ]));
+        Assert.True(filled.Succeeded);
+
+        var withFill = await context.WorkbookService.ReadRangeFormatAsync(context.WorkbookPath, sheetName, address);
+        Assert.True(withFill.Succeeded);
+        Assert.True(withFill.Format.HasFill);
+        Assert.Equal("#FFFFFF", withFill.Format.FillColor);
+
+        var cleared = await context.WorkbookService.WriteRangeFormatsAsync(
+            context.WorkbookPath,
+            new RangeFormatWriteRequest(
+            [
+                new RangeFormatWriteTarget(sheetName, address, new RangeFormatPatch(HasFill: false))
+            ]));
+        Assert.True(cleared.Succeeded);
+
+        var withoutFill = await context.WorkbookService.ReadRangeFormatAsync(context.WorkbookPath, sheetName, address);
+        Assert.True(withoutFill.Succeeded);
+        Assert.False(withoutFill.Format.HasFill);
+        Assert.Null(withoutFill.Format.FillColor);
+    }
+
+    [LiveExcelFact]
+    public async Task WorksheetMoveCopyAndVisibility_PersistInInventory()
+    {
+        await using var context = await LiveExcelTestContext.CreateAsync();
+        var suffix = Guid.NewGuid().ToString("N")[..6];
+        var sourceSheet = $"GPLSrc{suffix}";
+        var movedSheet = $"GPLMove{suffix}";
+        var copiedSheet = $"GPLCopy{suffix}";
+
+        Assert.True((await context.WorkbookService.CreateWorksheetAsync(context.WorkbookPath, sourceSheet)).Succeeded);
+        Assert.True((await context.WorkbookService.CreateWorksheetAsync(context.WorkbookPath, movedSheet)).Succeeded);
+
+        var copied = await context.WorkbookService.CopyWorksheetAsync(
+            context.WorkbookPath,
+            new WorksheetCopyRequest(sourceSheet, copiedSheet, Position: "last"));
+        Assert.True(copied.Succeeded);
+
+        var moved = await context.WorkbookService.MoveWorksheetAsync(
+            context.WorkbookPath,
+            new WorksheetMoveRequest(movedSheet, Position: "first"));
+        Assert.True(moved.Succeeded);
+
+        var hidden = await context.WorkbookService.SetWorksheetVisibilityAsync(
+            context.WorkbookPath,
+            new WorksheetVisibilityRequest(copiedSheet, "veryHidden"));
+        Assert.True(hidden.Succeeded);
+
+        var inventory = await context.WorkbookService.ListInventoryAsync(context.WorkbookPath);
+        var movedEntry = Assert.Single(inventory.Sheets, sheet => string.Equals(sheet.Name, movedSheet, StringComparison.Ordinal));
+        var copiedEntry = Assert.Single(inventory.Sheets, sheet => string.Equals(sheet.Name, copiedSheet, StringComparison.Ordinal));
+        var sourceEntry = Assert.Single(inventory.Sheets, sheet => string.Equals(sheet.Name, sourceSheet, StringComparison.Ordinal));
+
+        Assert.Equal(1, movedEntry.Index);
+        Assert.Equal("veryHidden", copiedEntry.Visibility);
+        Assert.False(copiedEntry.Visible);
+        Assert.True(copiedEntry.Index > sourceEntry.Index);
+    }
+
+    [LiveExcelFact]
     public async Task NameLifecycle_PersistsCreateUpdateAndDelete()
     {
         await using var context = await LiveExcelTestContext.CreateAsync();

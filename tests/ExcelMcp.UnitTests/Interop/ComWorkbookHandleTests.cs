@@ -71,11 +71,15 @@ public sealed class ComWorkbookHandleTests
             {
                 Assert.Equal("Sheet1", sheet.Name);
                 Assert.True(sheet.Visible);
+                Assert.Equal("visible", sheet.Visibility);
+                Assert.Equal(1, sheet.Index);
             },
             sheet =>
             {
                 Assert.Equal("HiddenSheet", sheet.Name);
                 Assert.False(sheet.Visible);
+                Assert.Equal("hidden", sheet.Visibility);
+                Assert.Equal(2, sheet.Index);
             });
 
         var table = Assert.Single(tables);

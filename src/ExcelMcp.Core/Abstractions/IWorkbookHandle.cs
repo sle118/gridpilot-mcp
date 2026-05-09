@@ -29,6 +29,9 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task CreateWorksheetAsync(string sheetName, CancellationToken cancellationToken = default);
     Task RenameWorksheetAsync(string sheetName, string newSheetName, CancellationToken cancellationToken = default);
     Task DeleteWorksheetAsync(string sheetName, CancellationToken cancellationToken = default);
+    Task MoveWorksheetAsync(WorksheetMoveRequest request, CancellationToken cancellationToken = default);
+    Task CopyWorksheetAsync(WorksheetCopyRequest request, CancellationToken cancellationToken = default);
+    Task SetWorksheetVisibilityAsync(WorksheetVisibilityRequest request, CancellationToken cancellationToken = default);
     Task<TableDetailResult> GetTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task<TableReadResult> ReadTableAsync(string tableName, CancellationToken cancellationToken = default);
     Task CreateTableAsync(TableCreateRequest request, CancellationToken cancellationToken = default);
@@ -42,8 +45,11 @@ public interface IWorkbookHandle : IAsyncDisposable
 
     Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
     Task<RangeData> ReadRangeFormulasAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task<RangeFormatData> ReadRangeFormatAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
     Task<RangeData> ReadNamedRangeAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
     Task WriteRangeAsync(string address, object?[,] values, string? sheetName = null, CancellationToken cancellationToken = default);
     Task WriteRangeFormulasAsync(string address, string?[,] formulas, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task WriteRangeFormatAsync(string address, RangeFormatPatch format, string? sheetName = null, CancellationToken cancellationToken = default);
+    Task AutofitRangeAsync(string address, string dimension, string? sheetName = null, CancellationToken cancellationToken = default);
     Task ClearRangeContentsAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default);
 }
