@@ -6,6 +6,8 @@ Focused technical notes live here when a subject needs more depth than the READM
 
 - `workbook-surface-roadmap.md`
   Current capability expansion order and what comes next after the present workbook-polish baseline.
+- `mcp-setup-and-troubleshooting.md`
+  The full host registration, runtime logging, proxy, and startup troubleshooting reference.
 - `power-query-diagnostics.md`
   Notes on refresh, probing, cleanup, and troubleshooting for query-heavy workbooks.
 - `branding-and-naming.md`

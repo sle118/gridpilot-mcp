@@ -114,94 +114,33 @@ range_read { "connectionId": "...", "sheetName": "Summary", "address": "A1:C10" 
 session_disconnect_workbook { "connectionId": "..." }
 ```
 
-## Launch And MCP Setup
+## Getting Started
 
-### Recommended host registration
+The README stays product-facing. The operational setup and troubleshooting reference lives here:
 
-For Codex, prefer registering the built host executable rather than `dotnet run`.
+- [MCP setup and troubleshooting](docs/topics/mcp-setup-and-troubleshooting.md)
+- [Workbook surface roadmap](docs/topics/workbook-surface-roadmap.md)
+- [Current state handoff](docs/handoff/current-state.md)
 
-Attached live-session mode:
+Start with this high-level path:
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner
-```
+1. register the MCP host with your client
+2. choose `attach` or `create-new` session mode
+3. connect to a workbook and operate through `connectionId`
+4. turn on runtime logging only when you need real troubleshooting data
 
-Dedicated hidden Excel instance:
+## For Contributors
 
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode create-new
-```
-
-### Runtime logging
-
-Use file-backed runtime logging for real troubleshooting without polluting MCP stdout:
-
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
-```
-
-Supported switches:
-
-- `--log-level off|info|debug|trace`
-- `--log-path <file>`
-
-Matching environment variables:
-
-- `GRIDPILOT_LOG_LEVEL`
-- `GRIDPILOT_LOG_PATH`
-
-### MCP troubleshooting proxy
-
-When startup or transport behavior needs inspection, register the proxy in front of the host:
-
-```powershell
-codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolProxy\bin\Debug\net8.0\ExcelMcp.ToolProxy.exe --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\mcp-proxy\gridpilot.log --label gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode attach --attach-target workbook-owner --log-level info --log-path C:\Users\sle11\Documents\VSCode\gridpilot-mcp\.tmp\gridpilot-runtime.log
-```
-
-### Useful follow-up commands
-
-```powershell
-codex mcp list
-codex mcp get gridpilot
-```
-
-If Codex reports MCP startup timeouts, increase the timeout in `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.gridpilot]
-startup_timeout_sec = 60
-```
-
-## Repo Shape
-
-- `AGENTS.md`
+- [AGENTS.md](AGENTS.md)
   Fast operational rules for agents working in this repo.
-- `branding/assets/`
-  Logos, icons, reference boards, and the GitHub presentation kit.
-- `docs/handoff/`
-  Current state and near-term next actions.
-- `docs/topics/`
-  Focused technical notes.
-- `src/`
-  The bridge, host, COM adapter, and supporting projects.
-- `tests/`
-  Unit, integration, and opt-in live Excel validation.
-
-## Branding Assets
-
-The repo ships with light and dark logos plus reference boards under `branding/assets/`.
-
-- use `logo.svg` on light backgrounds
-- use `logo-dark.svg` on dark backgrounds
-- keep new GitHub-facing visuals in `branding/assets/` so there is one clear source of truth
-
-## Expected Unzip Order
-
-If reconstructing the workspace from generated packs, unzip in this order:
-
-1. governance pack
-2. solution skeleton pack
-3. branding overlay pack
+- [docs/handoff/current-state.md](docs/handoff/current-state.md)
+  Current implementation baseline and what is already live.
+- [docs/handoff/next-steps.md](docs/handoff/next-steps.md)
+  The active follow-on priorities.
+- [docs/topics/README.md](docs/topics/README.md)
+  Focused technical notes and setup references.
+- [branding/README.md](branding/README.md)
+  Brand usage and presentation-kit guidance.
 
 ## Current Priorities
 

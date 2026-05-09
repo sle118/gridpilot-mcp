@@ -50,3 +50,4 @@ Refresh the GitHub-facing presentation layer so GridPilot MCP feels aligned with
 - reflowed the hero and card copy into explicit multi-line SVG text so GitHub rendering does not clip long headlines or descriptions
 - applied the same explicit SVG text reflow to the architecture overview so stage labels and supporting cards render cleanly inside fixed-width panels
 - tightened the whole presentation kit with more conservative typography and panel layouts after finding additional clipping in the architecture, surface-map, and workflow SVGs
+- pulled the long MCP registration and troubleshooting commands out of the README into a dedicated setup reference so the main page reads like a pitch first and an operator manual second
