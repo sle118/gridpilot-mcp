@@ -85,99 +85,97 @@ $basicAuthBytes = [System.Text.Encoding]::ASCII.GetBytes("x-access-token:$GitHub
 $basicAuthValue = [Convert]::ToBase64String($basicAuthBytes)
 $gitExtraHeader = "AUTHORIZATION: Basic $basicAuthValue"
 
+Invoke-Git -RepoRoot $repoRoot -Arguments @(
+    "-c",
+    "http.extraHeader=$gitExtraHeader",
+    "-c",
+    "credential.helper=",
+    "-c",
+    "core.askPass=",
+    "-c",
+    "credential.useHttpPath=false",
+    "push",
+    "https://github.com/$slug.git",
+    "HEAD:refs/heads/$MirrorBranchName"
+)
+
+Invoke-Git -RepoRoot $repoRoot -Arguments @(
+    "-c",
+    "http.extraHeader=$gitExtraHeader",
+    "-c",
+    "credential.helper=",
+    "-c",
+    "core.askPass=",
+    "-c",
+    "credential.useHttpPath=false",
+    "push",
+    "https://github.com/$slug.git",
+    "refs/tags/$Version:refs/tags/$Version"
+)
+
+$headers = @{
+    Authorization = "Bearer $GitHubToken"
+    Accept = "application/vnd.github+json"
+    "X-GitHub-Api-Version" = "2022-11-28"
+}
+
+$releaseApiBase = "https://api.github.com/repos/$slug/releases"
+$release = $null
+
 try {
-    Invoke-Git -RepoRoot $repoRoot -Arguments @(
-        "-c",
-        "http.extraHeader=$gitExtraHeader",
-        "-c",
-        "credential.helper=",
-        "-c",
-        "core.askPass=",
-        "-c",
-        "credential.useHttpPath=false",
-        "push",
-        "https://github.com/$slug.git",
-        "HEAD:refs/heads/$MirrorBranchName"
-    )
-
-    Invoke-Git -RepoRoot $repoRoot -Arguments @(
-        "-c",
-        "http.extraHeader=$gitExtraHeader",
-        "-c",
-        "credential.helper=",
-        "-c",
-        "core.askPass=",
-        "-c",
-        "credential.useHttpPath=false",
-        "push",
-        "https://github.com/$slug.git",
-        "refs/tags/$Version:refs/tags/$Version"
-    )
-
-    $headers = @{
-        Authorization = "Bearer $GitHubToken"
-        Accept = "application/vnd.github+json"
-        "X-GitHub-Api-Version" = "2022-11-28"
+    $release = Invoke-RestMethod -Method Get -Uri "$releaseApiBase/tags/$Version" -Headers $headers
+}
+catch {
+    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+        $release = $null
     }
-
-    $releaseApiBase = "https://api.github.com/repos/$slug/releases"
-    $release = $null
-
-    try {
-        $release = Invoke-RestMethod -Method Get -Uri "$releaseApiBase/tags/$Version" -Headers $headers
+    else {
+        throw
     }
-    catch {
-        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-            $release = $null
-        }
-        else {
-            throw
-        }
-    }
+}
 
-    $releaseBody = @"
+$releaseBody = @"
 GridPilot MCP $Version
 
 Portable Windows ZIP release with the host, proxy, tray shell, README, setup guide, and release manifest.
 "@
 
-    $payload = @{
-        tag_name = $Version
-        target_commitish = $MirrorBranchName
-        name = "GridPilot MCP $Version"
-        body = $releaseBody
-        draft = $false
-        prerelease = $false
-    }
+$payload = @{
+    tag_name = $Version
+    target_commitish = $MirrorBranchName
+    name = "GridPilot MCP $Version"
+    body = $releaseBody
+    draft = $false
+    prerelease = $false
+}
 
-    if ($null -eq $release) {
-        $release = Invoke-RestMethod -Method Post -Uri $releaseApiBase -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
-    }
-    else {
-        $release = Invoke-RestMethod -Method Patch -Uri "$releaseApiBase/$($release.id)" -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
-    }
+if ($null -eq $release) {
+    $release = Invoke-RestMethod -Method Post -Uri $releaseApiBase -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
+}
+else {
+    $release = Invoke-RestMethod -Method Patch -Uri "$releaseApiBase/$($release.id)" -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
+}
 
-    $assetName = Split-Path $AssetPath -Leaf
-    foreach ($asset in @($release.assets)) {
-        if ($asset.name -eq $assetName) {
-            Invoke-RestMethod -Method Delete -Uri "$releaseApiBase/assets/$($asset.id)" -Headers $headers | Out-Null
-        }
+$assetName = Split-Path $AssetPath -Leaf
+foreach ($asset in @($release.assets)) {
+    if ($asset.name -eq $assetName) {
+        Invoke-RestMethod -Method Delete -Uri "$releaseApiBase/assets/$($asset.id)" -Headers $headers | Out-Null
     }
+}
 
-    $uploadUrl = ($release.upload_url -replace '\{\?name,label\}$', '')
-    $encodedAssetName = [System.Uri]::EscapeDataString($assetName)
+$uploadUrl = ($release.upload_url -replace '\{\?name,label\}$', '')
+$encodedAssetName = [System.Uri]::EscapeDataString($assetName)
 
-    Invoke-WebRequest `
-        -Method Post `
-        -Uri "$uploadUrl?name=$encodedAssetName" `
-        -Headers $headers `
-        -ContentType "application/zip" `
-        -InFile $AssetPath | Out-Null
+Invoke-WebRequest `
+    -Method Post `
+    -Uri "$uploadUrl?name=$encodedAssetName" `
+    -Headers $headers `
+    -ContentType "application/zip" `
+    -InFile $AssetPath | Out-Null
 
-    [pscustomobject]@{
-        Repository = $slug
-        Version = $Version
-        ReleaseUrl = $release.html_url
-        AssetName = $assetName
-    }
+[pscustomobject]@{
+    Repository = $slug
+    Version = $Version
+    ReleaseUrl = $release.html_url
+    AssetName = $assetName
 }
