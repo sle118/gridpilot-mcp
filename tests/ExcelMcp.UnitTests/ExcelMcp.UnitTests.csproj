@@ -6,6 +6,7 @@
     <RootNamespace>ExcelMcp.UnitTests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/ExcelMcp.Deployment/ExcelMcp.Deployment.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.Core/ExcelMcp.Core.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.Bridge/ExcelMcp.Bridge.csproj" />
     <ProjectReference Include="../../src/ExcelMcp.ComAdapter/ExcelMcp.ComAdapter.csproj" />

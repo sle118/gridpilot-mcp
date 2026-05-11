@@ -8,6 +8,7 @@ TestResults/
 *.suo
 artifacts/
 .tmp/
+docs/preview/out/
 *.tmp.xlsx
 /Book_mcp_test.xlsx
 *.generated.*

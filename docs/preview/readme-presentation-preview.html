@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GridPilot MCP README Presentation Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page-bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface-border: #d0d7de;
+      --text: #1f2933;
+      --muted: #52616f;
+      --link: #0969da;
+      --content-width: 960px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px 72px;
+    }
+
+    .article {
+      max-width: var(--content-width);
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 32px 40px 56px;
+      box-shadow: 0 1px 2px rgba(31, 41, 51, 0.04);
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 16px;
+      line-height: 1.2;
+      color: #24292f;
+      font-weight: 700;
+    }
+
+    h1 {
+      font-size: 2.3rem;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-size: 1.95rem;
+      margin-top: 42px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      margin-top: 28px;
+      margin-bottom: 10px;
+    }
+
+    p, ul, ol {
+      margin: 0 0 16px;
+      font-size: 1rem;
+    }
+
+    ul, ol {
+      padding-left: 24px;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    a {
+      color: var(--link);
+    }
+
+    code {
+      padding: 0.15em 0.35em;
+      border-radius: 6px;
+      background: rgba(175, 193, 204, 0.18);
+      font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .diagram {
+      margin: 22px 0 28px;
+      padding: 0;
+      background: transparent;
+      border: 0;
+    }
+
+    .diagram img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 0;
+      box-shadow: none;
+    }
+
+    .lede {
+      font-size: 1.08rem;
+      color: #24292f;
+    }
+
+    .callout {
+      margin: 18px 0 24px;
+      padding: 14px 16px;
+      border: 1px solid #d8dee4;
+      border-radius: 10px;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+
+    .links {
+      display: grid;
+      gap: 10px;
+    }
+
+    @media (max-width: 840px) {
+      .page {
+        padding: 20px 12px 48px;
+      }
+
+      .article {
+        padding: 24px 20px 36px;
+      }
+
+      h1 {
+        font-size: 2rem;
+      }
+
+      h2 {
+        font-size: 1.65rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <article class="article">
+      <h1>GridPilot MCP</h1>
+
+      <p class="lede"><strong>Let coding agents work with live Excel — safely, visibly, and under control.</strong></p>
+
+      <div class="diagram">
+        <img src="../../branding/assets/github-hero.svg" alt="GridPilot MCP hero">
+      </div>
+
+      <p class="lede">GridPilot MCP is a local automation bridge for Microsoft Excel. It gives AI coding agents a controlled way to inspect, edit, refresh, and diagnose real workbooks running on the desktop.</p>
+      <p>Excel remains the data plane. GridPilot becomes the control plane.</p>
+      <p>Instead of relying on fragile desktop guesswork, agents interact through scoped MCP tools for workbook sessions, ranges, formulas, worksheets, tables, Power Query definitions, names, formatting, refreshes, and diagnostics.</p>
+      <p>The goal is not unattended spreadsheet chaos. The goal is safe human + agent collaboration on the Excel files people actually use.</p>
+
+      <h2>The Problem</h2>
+      <p>Excel often holds the real operational surface: reporting logic, financial models, planning sheets, cleanup workflows, and fragile business-critical workbooks that people still open and edit by hand.</p>
+      <p>Coding agents are good at source files. They are much less trustworthy when the job becomes “go click around in a live spreadsheet and hope nothing breaks.”</p>
+      <p>GridPilot MCP exists to close that gap: give agents a safe, inspectable path into live Excel without pretending a workbook is just another text file.</p>
+
+      <h2>The GridPilot Approach</h2>
+      <ul>
+        <li>Excel stays the <strong>data plane</strong>.</li>
+        <li>The C# bridge owns <strong>session routing, safety, cleanup, retries, diagnostics, and COM interaction</strong>.</li>
+        <li>Agents get <strong>targeted workbook tools</strong>, not a vague “run whatever in Excel” escape hatch.</li>
+        <li>Validation stays <strong>mock-first</strong>, with live Excel remaining opt-in.</li>
+        <li><strong>Human + agent coexistence</strong> is a first-class design constraint.</li>
+      </ul>
+
+      <h2>How It Works</h2>
+      <p>An MCP client starts the host, then either attaches to a live workbook session or creates a new bridge-owned one. Later tool calls use a <code>connectionId</code> so operations stay scoped to the intended workbook.</p>
+      <p>Calls are routed through a C# service layer and a COM adapter that keeps Excel-specific details isolated. Logs and structured errors make failures inspectable instead of mysterious.</p>
+
+      <div class="diagram">
+        <img src="../../branding/assets/architecture-overview.svg" alt="Architecture overview">
+      </div>
+
+      <h2>What Agents Can Do Today</h2>
+      <div class="diagram">
+        <img src="../../branding/assets/surface-map.svg" alt="Implemented surface map">
+      </div>
+
+      <ul>
+        <li><strong>Sessions and routing:</strong> discover open workbooks, connect by name or path, create new workbooks, and route later calls through <code>connectionId</code>.</li>
+        <li><strong>Workbook structure:</strong> inspect sheets, tables, queries, and connections, then save, rename, reorder, copy, move, or hide worksheets.</li>
+        <li><strong>Ranges and formulas:</strong> read and write values, formulas, formatting, clear content, size rows and columns, and autofit.</li>
+        <li><strong>Power Query:</strong> inspect definitions, run targeted refreshes, probe diagnostics, and clean up temporary queries.</li>
+        <li><strong>Tables and names:</strong> manage table lifecycle and workbook or worksheet-scoped names.</li>
+        <li><strong>Diagnostics and safety:</strong> recalculate in scope, inspect errors, enforce mutation leases, and emit structured failures plus runtime logs.</li>
+      </ul>
+
+      <h2>Typical Flow</h2>
+      <div class="diagram">
+        <img src="../../branding/assets/workflow-overview.svg" alt="Normal workbook flow">
+      </div>
+
+      <div class="callout">
+        The README stays pitch-first. Long MCP registration commands, logging flags, and troubleshooting flows belong in dedicated setup docs.
+      </div>
+
+      <p>Use runtime logging when you need real troubleshooting data.</p>
+      <ol>
+        <li>start or register the MCP host</li>
+        <li>attach to an open workbook or create a new session</li>
+        <li>connect and receive a <code>connectionId</code></li>
+        <li>inspect, edit, refresh, or diagnose through scoped tools</li>
+      </ol>
+
+      <h2>Safety Model</h2>
+      <ul>
+        <li><code>connectionId</code> keeps calls routed to the intended workbook session.</li>
+        <li>Attached sessions use mutation-permission leases before edits are allowed.</li>
+        <li>Recalculation can be scoped to workbook, worksheet, or range targets.</li>
+        <li>Failures come back as structured results instead of hidden UI side effects.</li>
+        <li>Runtime logging makes host, bridge, and COM behavior inspectable.</li>
+        <li>Validation stays mock-first, while live Excel coverage remains opt-in.</li>
+      </ul>
+
+      <h2>Getting Started</h2>
+      <p>The operational setup and troubleshooting reference lives here:</p>
+      <div class="links">
+        <a href="../topics/mcp-setup-and-troubleshooting.md">MCP setup and troubleshooting</a>
+        <a href="../topics/workbook-surface-roadmap.md">Workbook surface roadmap</a>
+        <a href="../handoff/current-state.md">Current state handoff</a>
+      </div>
+
+      <h2>For Contributors</h2>
+      <div class="links">
+        <a href="../../AGENTS.md">AGENTS.md</a>
+        <a href="../handoff/current-state.md">Current state</a>
+        <a href="../handoff/next-steps.md">Next steps</a>
+        <a href="../topics/README.md">Topics index</a>
+        <a href="../../branding/README.md">Branding docs</a>
+      </div>
+
+      <p style="margin-top: 18px;">Contributor note: the codebase still uses provisional <code>ExcelMcp.*</code> assembly and namespace names internally. The external project identity is GridPilot MCP.</p>
+
+      <h2>Current Priorities</h2>
+      <ol>
+        <li>improve attached-session unsafe-UI detection as the live editing surface expands</li>
+        <li>strengthen coordination for concurrent human and agent workbook editing</li>
+        <li>continue expanding workbook surfaces without losing safety, observability, or testability</li>
+      </ol>
+    </article>
+  </main>
+</body>
+</html>

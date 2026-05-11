@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ExcelMcp.Deployment</AssemblyName>
+    <RootNamespace>ExcelMcp.Deployment</RootNamespace>
+  </PropertyGroup>
+</Project>
+

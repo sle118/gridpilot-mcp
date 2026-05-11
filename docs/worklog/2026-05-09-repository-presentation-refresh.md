@@ -51,3 +51,12 @@ Refresh the GitHub-facing presentation layer so GridPilot MCP feels aligned with
 - applied the same explicit SVG text reflow to the architecture overview so stage labels and supporting cards render cleanly inside fixed-width panels
 - tightened the whole presentation kit with more conservative typography and panel layouts after finding additional clipping in the architecture, surface-map, and workflow SVGs
 - pulled the long MCP registration and troubleshooting commands out of the README into a dedicated setup reference so the main page reads like a pitch first and an operator manual second
+- added a browser-based preview and screenshot loop so README visuals are reviewed from rendered output instead of SVG source assumptions
+- simplified the diagrams after reviewing real screenshots: the visuals now carry structure while markdown prose carries more of the explanation
+- removed lingering README-surface VBA phrasing so the pitch reflects the current bridge-first control model instead of an older fallback-era contrast
+- rewrote the README pitch around GridPilot as a local control plane for safe agent interaction with live Excel workbooks, with implementation caveats pushed down into contributor-facing notes
+- repaired README integration issues after an external rewrite by fixing broken asset references, malformed markdown fencing, and contributor-facing doc links
+- refined the hero and surface-map SVG narratives after rendered review so they reinforce the product story instead of drifting back toward defensive or status-report language
+- promoted the newer redesigned hero and surface-map assets into the canonical filenames and removed the duplicate `-pimped` variants so the branding surface has one clear source of truth again
+- replaced the non-rendering README `flowchart LR` block with the branded architecture SVG so the front-door architecture explanation uses the maintained visual system instead of Mermaid-dependent rendering
+- removed the remaining Mermaid mind map, sequence diagram, and safety flowchart from the README in favor of branded repo-native SVGs so the document uses one reliable visual system throughout

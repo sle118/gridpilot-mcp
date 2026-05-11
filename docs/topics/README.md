@@ -12,6 +12,10 @@ Focused technical notes live here when a subject needs more depth than the READM
   Notes on refresh, probing, cleanup, and troubleshooting for query-heavy workbooks.
 - `branding-and-naming.md`
   The current split between GridPilot MCP as the repo identity and `ExcelMcp.*` as the temporary code-level naming.
+- `deployment-core-and-tray-governance.md`
+  Governance for the deployment core plus optional Windows tray shell initiative.
+- `deployment-inventory-and-current-surface.md`
+  DEPLOY-001 inventory of current launch, logging, transport, registration, tool-list, build, and packaging surfaces.
 
 ## Usage note
 

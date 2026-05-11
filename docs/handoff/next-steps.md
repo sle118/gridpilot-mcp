@@ -1,30 +1,30 @@
 # Next Steps
 
-The bridge now has a broad enough workbook surface that the next work should focus on **safety refinement and the next high-value structure layers**, not on random surface sprawl.
+The bridge now has a broad enough workbook surface that MCP tool expansion should pause while the project focuses on **deployment core + tray shell** work.
 
 ## Immediate Priorities
 
-1. **Strengthen attached-session safety**
-   Improve unsafe UI-state detection and refusal reasons now that formatting and worksheet layout mutations are live.
-2. **Decide whether leases are enough**
-   Revisit whether mutation permissions should remain a simple approval lease or evolve into a stronger coordination model.
-3. **Package the next surface wave**
-   Prefer focused slices such as validation/conditional-formatting diagnostics, richer workbook layout/protection helpers, or deeper dependency-aware workflows.
-4. **Keep runtime logging sharp**
-   Continue adjusting log coverage and fields based on real live-workbook regressions.
+1. **Review DEPLOY-009**
+   Confirm the dashboard remains a thin optional WinForms surface over `ExcelMcp.Deployment` for profile, config preview, log, doctor, diagnostic, and smoke-test behavior.
+2. **Plan optional config writers**
+   DEPLOY-010 should add conservative config writing only after preview/copy behavior is solid.
+3. **Preserve deployment-core layering**
+   Reuse the existing `ExcelMcp.ToolProxy` / `McpFrameSniffer` lessons, preserve framed and raw JSON-RPC stdio support, keep runtime logs file-backed, and keep MCP stdout JSON-RPC only.
 
 ## Recommended Next Slice
 
-The best next bounded slice is:
+After DEPLOY-009 is reviewed, the best next bounded slice is:
 
-- safer attached-session mutation handling for the broadened workbook-polish baseline
-- plus one focused post-polish workbook family, likely validation or workbook-layout refinement
+- DEPLOY-010 optional config writers
+- keep startup registration and packaging out until DEPLOY-011
 
-Keep broader shared-session coordination redesign out of that same slice.
+Config writers must stay conservative: preview diffs, back up existing files, avoid blind overwrites, support dry-run, and report exact modified paths.
 
 ## Reference
 
-- roadmap: `docs/topics/workbook-surface-roadmap.md`
+- deployment governance: `docs/topics/deployment-core-and-tray-governance.md`
+- deployment inventory: `docs/topics/deployment-inventory-and-current-surface.md`
+- previous workbook roadmap: `docs/topics/workbook-surface-roadmap.md`
 
 ## Cautions
 
@@ -33,3 +33,4 @@ Keep broader shared-session coordination redesign out of that same slice.
 - keep live Excel tests opt-in
 - keep COM details isolated behind interfaces
 - keep runtime logging separate from MCP stdout and proxy transport traces
+- do not put deployment-core behavior directly in the future tray project

@@ -1,0 +1,50 @@
+using ExcelMcp.Deployment.AgentConfig;
+using ExcelMcp.Deployment.Profiles;
+
+namespace GridPilot.Tray;
+
+internal static class AgentConfigPresenter
+{
+    public static IReadOnlyList<AgentTargetItem> Targets { get; } =
+    [
+        new(AgentTarget.VsCodeCopilot, "VS Code / Copilot"),
+        new(AgentTarget.CodexCli, "Codex CLI"),
+        new(AgentTarget.ClaudeCode, "Claude Code"),
+        new(AgentTarget.GenericMcpJson, "Generic MCP")
+    ];
+
+    public static AgentConfigPreviewState CreatePreview(LaunchProfile? profile, AgentTarget target)
+    {
+        var displayName = GetDisplayName(target);
+        if (profile is null)
+        {
+            return new AgentConfigPreviewState(
+                displayName,
+                SuggestedFileName: string.Empty,
+                Language: string.Empty,
+                Content: string.Empty,
+                IssuesText: "No valid profile is loaded.",
+                CanCopy: false);
+        }
+
+        var snippet = AgentConfigEmitter.Emit(profile, target);
+        return new AgentConfigPreviewState(
+            snippet.DisplayName,
+            snippet.SuggestedFileName,
+            snippet.Language,
+            snippet.Content,
+            FormatIssues(snippet.Issues),
+            snippet.IsSuccess);
+    }
+
+    public static string GetDisplayName(AgentTarget target) =>
+        Targets.First(item => item.Target == target).DisplayName;
+
+    public static string FormatIssues(IEnumerable<AgentConfigIssue> issues)
+    {
+        var issueLines = issues
+            .Select(issue => $"[{issue.Severity}] {issue.Code}: {issue.Message}")
+            .ToArray();
+        return issueLines.Length == 0 ? "No issues." : string.Join(Environment.NewLine, issueLines);
+    }
+}

@@ -1,150 +1,165 @@
 # GridPilot MCP
 
-![GridPilot MCP hero](branding/assets/github-hero.svg)
+<p align="center">
+  <img src="branding/assets/github-hero.svg" alt="GridPilot MCP hero" width="920">
+</p>
 
-GridPilot MCP is a local desktop automation bridge for Microsoft Excel. It gives coding agents a controlled MCP host for inspecting, editing, refreshing, and diagnosing live workbooks without pushing orchestration logic into VBA.
+**Let coding agents work with live Excel — safely, visibly, and under control.**
 
-## Why It Matters
+GridPilot MCP is a local automation bridge for Microsoft Excel. It gives coding agents a controlled way to inspect, edit, refresh, and diagnose real desktop workbooks.
 
-- Operate **live desktop Excel** through a dedicated control plane instead of workbook-side scripts.
-- Keep edits **deliberate and observable** with connection routing, mutation permissions, and runtime logging.
-- Target the real workbook surface: **ranges, queries, tables, names, formatting, worksheet layout, and diagnostics**.
-- Preserve a path for safe human + agent coexistence instead of pretending unattended automation is the goal.
+Excel remains the **data plane**. GridPilot becomes the **control plane**.
 
-## What It Is
+Agents work through scoped MCP tools for sessions, ranges, formulas, worksheets, tables, Power Query definitions, names, formatting, refreshes, and diagnostics. The bridge owns the risky and boring parts: routing, COM interaction, mutation permissions, cleanup, retries, logging, and structured failure reporting.
 
-GridPilot MCP is the human-facing identity of this repository. The implementation still uses provisional `ExcelMcp.*` project and namespace names inside the solution while the early workbook surface continues to evolve.
+This is not about unattended spreadsheet chaos. It is about safe human + agent collaboration on the Excel files people actually use.
 
-The current repo is intentionally split into two layers:
+---
 
-- a governance layer for docs, handoff continuity, testing discipline, and repo workflow
-- a working C# bridge that is steadily expanding the live Excel workbook surface
+## Why GridPilot Exists
 
-## Why It Exists
+Excel is still a runtime for real business work: reporting, reconciliation, operational data, financial models, Power Query pipelines, formulas, named ranges, and workbook conventions that are often undocumented but critical.
 
-The project is built around a few simple rules:
+Coding agents can already edit source files. The harder problem is giving them safe, observable access to the workbook itself: the live document, the active queries, the actual formulas, the formatting, the current errors, and the state Excel sees right now.
 
-- Excel stays the **data plane**.
-- The C# bridge owns **session safety, routing, cleanup, retries, and diagnostics**.
-- Agents should get **targeted tools**, not a vague “run whatever in Excel” escape hatch.
-- Normal validation should stay **mock-first**, with live Excel remaining opt-in.
+GridPilot MCP gives agents a practical workbook control surface without pretending Excel is just another text file.
 
-![Architecture overview](branding/assets/architecture-overview.svg)
+---
 
-## What You Can Do Today
+## The GridPilot Approach
 
-![Implemented surface map](branding/assets/surface-map.svg)
+GridPilot is built around a few rules that keep the system useful without turning it into a free-for-all automation tunnel:
 
-### Session
+- **Excel stays the data plane.** The workbook remains the source of truth.
+- **GridPilot is the control plane.** Agents operate through explicit, routed tool calls.
+- **The C# bridge owns the desktop edge.** Session routing, COM interaction, leases, cleanup, retries, and diagnostics live outside the workbook.
+- **Tools are scoped.** Agents get workbook operations, not a vague “run anything in Excel” escape hatch.
+- **Validation is mock-first.** Live Excel automation is opt-in for tests and investigations.
+- **Humans remain part of the model.** Attached-session safety matters because people may be editing the same workbook.
 
-**Status:** implemented
+<p align="center">
+  <img src="branding/assets/architecture-overview.svg" alt="GridPilot MCP architecture overview" width="920">
+</p>
 
-- list open workbooks across running Excel instances
-- connect by workbook name or full path
-- create a new workbook through the bridge
-- route later calls through `connectionId`
-- list, inspect, and disconnect workbook connections
+---
 
-### Workbook
+## What Agents Can Do Today
 
-**Status:** implemented, still expanding
+GridPilot exposes the workbook surface as practical capabilities rather than raw desktop automation.
 
-- inventory sheets, queries, connections, and tables
-- save in place and save as with connection retargeting
-- create, rename, delete, move, copy, and reorder worksheets
-- set worksheet visibility including `veryHidden`
+### Sessions and routing
 
-### Range
+Discover running Excel instances, list open workbooks, attach by workbook name or path, create a new workbook, and route later calls through a stable `connectionId`.
 
-**Status:** implemented and practical
+### Workbook structure
 
-- read and write rectangular values
-- read and write formulas
-- clear contents while preserving layout
-- read and write compact formatting snapshots
-- set row height, column width, and autofit
-- distinguish true no-fill from explicit fill state
+Inventory sheets, queries, connections, tables, and names. Create, rename, delete, move, copy, reorder, and hide worksheets, including `veryHidden` visibility.
 
-### Query
+### Ranges, formulas, and layout
 
-**Status:** implemented
+Read and write rectangular values, formulas, compact formatting snapshots, row heights, column widths, autofit behavior, and layout-preserving clears. GridPilot also distinguishes true no-fill state from explicit fill state so agents can preserve workbook styling accurately.
 
-- read query definitions
-- run targeted refresh
-- run diagnostic probes
-- clean up temp diagnostic queries
-- update query formulas
+### Power Query
 
-### Table And Names
+Read query definitions, update query formulas, run targeted refreshes, execute diagnostic probes, and clean up temporary diagnostic queries. This gives agents a path for schema checks, dependency investigation, and controlled refresh workflows.
 
-**Status:** implemented
+### Tables and names
 
-- read table payloads and metadata
-- create, resize, append, replace, delete, and configure tables
-- list, resolve, read, create, update, and delete workbook and worksheet-scoped names
+Create, resize, append, replace, delete, and configure Excel tables. List, resolve, read, create, update, or delete workbook- and worksheet-scoped names.
 
-### Safety And Diagnostics
+### Diagnostics and safety
 
-**Status:** implemented, next focus is refinement
+Run workbook-, worksheet-, and range-scoped recalculation. Inspect compact formula and literal errors. Use mutation-permission leases for attached sessions. Capture runtime logs across the host, bridge, and COM adapter.
 
-- workbook-, worksheet-, and range-scoped recalculation
-- compact formula and literal error inspection
+<p align="center">
+  <img src="branding/assets/surface-map.svg" alt="Workbook surfaces available through GridPilot MCP" width="920">
+</p>
+
+<p align="center">
+  <img src="branding/assets/capability-snapshot.svg" alt="GridPilot MCP capability snapshot" width="920">
+</p>
+
+---
+
+## How It Works
+
+GridPilot runs locally beside desktop Excel.
+
+A typical MCP client starts or connects to the GridPilot host. The host attaches to an existing workbook session or creates a new workbook, then returns a `connectionId`. Later tool calls use that `connectionId` so operations stay routed to the intended workbook.
+
+The C# bridge translates scoped workbook requests into controlled Excel COM operations. Runtime logs and structured errors make failures inspectable when Excel behaves unexpectedly.
+
+<p align="center">
+  <img src="branding/assets/workflow-overview.svg" alt="Normal MCP workbook flow" width="920">
+</p>
+
+---
+
+## Mental Model
+
+GridPilot is useful when an agent needs to observe, change, refresh, or diagnose workbook state while keeping the interaction explicit and reviewable.
+
+<p align="center">
+  <img src="branding/assets/agent-excel-mindmap.svg" alt="GridPilot MCP agent and Excel mindmap" width="920">
+</p>
+
+---
+
+## Safety Model
+
+GridPilot is designed for controlled workbook automation, especially when a human may also have the workbook open.
+
+The current safety model includes:
+
+- explicit workbook connections through `connectionId`
 - mutation-permission leases for attached sessions
-- runtime logging across host, bridge, and COM adapter
+- scoped recalculation instead of blanket workbook churn
 - structured failures instead of silent UI-driven behavior
+- runtime logging across host, bridge, and COM adapter
+- cleanup of temporary diagnostic artifacts
+- mock-first validation for normal development
+- opt-in live Excel testing
 
-## How It Connects
+<p align="center">
+  <img src="branding/assets/safety-model.svg" alt="GridPilot MCP safety model" width="920">
+</p>
 
-![Normal workbook flow](branding/assets/workflow-overview.svg)
+---
 
-Typical flow:
+## Typical Flow
 
-1. start the MCP host
-2. optionally call `session_list_open_workbooks`
-3. call `session_connect_workbook`
-4. use the returned `connectionId` on later workbook tools
+1. Register or start the MCP host.
+2. Attach to an open workbook or create a new one.
+3. Connect and receive a `connectionId`.
+4. Inspect, edit, refresh, and diagnose through scoped tools.
+5. Enable runtime logging when troubleshooting real Excel behavior.
 
-Representative MCP flow:
-
-```text
-session_list_open_workbooks
-session_connect_workbook { "workbookName": "Budget.xlsx" }
-workbook_list_inventory { "connectionId": "..." }
-range_read { "connectionId": "...", "sheetName": "Summary", "address": "A1:C10" }
-session_disconnect_workbook { "connectionId": "..." }
-```
-
-## Getting Started
-
-The README stays product-facing. The operational setup and troubleshooting reference lives here:
+For setup commands, client registration details, and troubleshooting notes, use:
 
 - [MCP setup and troubleshooting](docs/topics/mcp-setup-and-troubleshooting.md)
-- [Workbook surface roadmap](docs/topics/workbook-surface-roadmap.md)
-- [Current state handoff](docs/handoff/current-state.md)
 
-Start with this high-level path:
-
-1. register the MCP host with your client
-2. choose `attach` or `create-new` session mode
-3. connect to a workbook and operate through `connectionId`
-4. turn on runtime logging only when you need real troubleshooting data
+---
 
 ## For Contributors
 
-- [AGENTS.md](AGENTS.md)
-  Fast operational rules for agents working in this repo.
-- [docs/handoff/current-state.md](docs/handoff/current-state.md)
-  Current implementation baseline and what is already live.
-- [docs/handoff/next-steps.md](docs/handoff/next-steps.md)
-  The active follow-on priorities.
-- [docs/topics/README.md](docs/topics/README.md)
-  Focused technical notes and setup references.
-- [branding/README.md](branding/README.md)
-  Brand usage and presentation-kit guidance.
+Useful project references:
+
+- [AGENTS.md](AGENTS.md) — fast operational rules for agents working in this repo.
+- [Current state](docs/handoff/current-state.md) — current implementation baseline.
+- [Next steps](docs/handoff/next-steps.md) — active follow-on priorities.
+- [Technical topics](docs/topics/README.md) — focused notes and setup references.
+- [Workbook surface roadmap](docs/topics/workbook-surface-roadmap.md) — capability expansion order and planned follow-on slices.
+- [Branding](branding/README.md) — brand usage and presentation-kit guidance.
+
+Contributor note: some internal project and namespace names may still use provisional `ExcelMcp.*` identifiers while the public-facing GridPilot identity continues to settle.
+
+---
 
 ## Current Priorities
 
-1. improve attached-session unsafe-UI detection now that formatting and worksheet layout mutations are live
-2. decide whether mutation approval should evolve into a stronger coordination model for concurrent human and agent editing
-3. package the next workbook-surface slices after the current workbook-polish baseline
-4. keep refining runtime logging based on real regression investigations
+Near-term work is focused on:
+
+- reviewing the deployment core plus tray dashboard slices
+- adding conservative optional config writers only after preview/copy behavior is stable
+- keeping runtime logs file-backed and MCP stdout JSON-RPC only
+- deferring startup registration and packaging until the tray/config writer surfaces settle
