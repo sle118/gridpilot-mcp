@@ -435,13 +435,15 @@ The current projects inherit `net8.0` from `Directory.Build.props`.
 
 Current packaging state:
 
+- portable Windows ZIP releases are produced from tagged pipelines and published to GitHub Releases
 - optional tray app exists as a build-output WinForms shell
 - deployment core exists as a reusable class library, not as an executable
 - no installer exists
 - no MSIX or winget package exists
-- normal setup uses build output paths and MCP client registration commands
+- normal contributor setup still uses build output paths and MCP client registration commands
+- the release ZIP is the public consumption path, while build outputs remain the contributor path
 
-Future packaging work should treat build-output/dev registration as the current baseline, not as a finished install experience.
+Future packaging work should treat the portable ZIP release as the current public baseline, while build-output/dev registration remains the contributor baseline.
 
 ## Future Work Boundaries
 

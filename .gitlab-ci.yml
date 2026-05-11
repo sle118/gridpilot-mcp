@@ -1,0 +1,30 @@
+stages:
+  - validate
+  - release
+
+variables:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+validate:
+  stage: validate
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release-package.ps1 -Version "v0.0.0-ci" -OutputRoot ".tmp\ci-release-pack"
+    - dotnet test ExcelMcp.sln -c Release
+  rules:
+    - when: on_success
+
+release_github:
+  stage: release
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release-package.ps1 -Version "$env:CI_COMMIT_TAG" -OutputRoot ".tmp\release-pack"
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/publish-github-release.ps1 -Version "$env:CI_COMMIT_TAG" -AssetPath ".tmp\release-pack\gridpilot-mcp-$env:CI_COMMIT_TAG-windows-x64.zip" -RepositoryUrl "$env:GITHUB_REPOSITORY_URL" -GitHubToken "$env:GITHUB_TOKEN" -MirrorBranchName "$env:CI_DEFAULT_BRANCH"
+  artifacts:
+    when: on_success
+    expire_in: 1 week
+    paths:
+      - .tmp/release-pack/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([-.+].*)?$/'
+      when: on_success
+    - when: never

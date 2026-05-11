@@ -2,6 +2,18 @@
 
 This is the operational reference for registering GridPilot MCP with a client, enabling runtime logs, and troubleshooting startup behavior.
 
+## Public release ZIP
+
+If you downloaded a GitHub release archive, unpack it first. The ZIP contains the host, proxy, tray shell, README, and setup docs in a release folder rooted at `gridpilot-mcp-vX.Y.Z-windows-x64`.
+
+Useful entry points from the unpacked archive:
+
+- `host\ExcelMcp.ToolHost.exe`
+- `proxy\ExcelMcp.ToolProxy.exe`
+- `tray\GridPilot.Tray.exe`
+
+The same client-registration and troubleshooting guidance below applies after you point your MCP client at the extracted `host` or `proxy` executable.
+
 ## Recommended host registration
 
 For Codex, prefer registering the built host executable rather than `dotnet run`.
@@ -17,6 +29,16 @@ codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\Exc
 ```powershell
 codex mcp add gridpilot -- C:\Users\sle11\Documents\VSCode\gridpilot-mcp\src\ExcelMcp.ToolHost\bin\Debug\net8.0\ExcelMcp.ToolHost.exe --session-mode create-new
 ```
+
+## Build from source
+
+For a local clone, build the solution and then point your client at the output you want to use:
+
+```powershell
+dotnet build ExcelMcp.sln -c Release
+```
+
+The exact executable path depends on the project you choose and the configuration you built.
 
 ## Runtime logging
 

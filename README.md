@@ -95,6 +95,28 @@ The C# bridge translates scoped workbook requests into controlled Excel COM oper
 
 ---
 
+## Get GridPilot
+
+If you want to use GridPilot on another Windows machine:
+
+1. Open the public GitHub repository and download the latest `gridpilot-mcp-vX.Y.Z-windows-x64.zip` release.
+2. Unpack the archive and read `README.md` plus `docs/topics/mcp-setup-and-troubleshooting.md`.
+3. Launch `tray/GridPilot.Tray.exe` for the dashboard, or register `host/ExcelMcp.ToolHost.exe` with your MCP client.
+
+For the release workflow and packaging details, see `docs/topics/public-distribution-and-release-workflow.md`.
+
+If you prefer source instead of a release archive:
+
+```powershell
+git clone <github-mirror-url>
+cd gridpilot-mcp
+dotnet build ExcelMcp.sln -c Release
+```
+
+The local build path keeps the usual `bin/Release` outputs, while the release ZIP is produced separately from tagged pipelines.
+
+---
+
 ## Mental Model
 
 GridPilot is useful when an agent needs to observe, change, refresh, or diagnose workbook state while keeping the interaction explicit and reviewable.
@@ -159,7 +181,7 @@ Contributor note: some internal project and namespace names may still use provis
 
 Near-term work is focused on:
 
-- reviewing the deployment core plus tray dashboard slices
+- keeping the portable ZIP release flow and GitHub mirror in sync
 - adding conservative optional config writers only after preview/copy behavior is stable
 - keeping runtime logs file-backed and MCP stdout JSON-RPC only
-- deferring startup registration and packaging until the tray/config writer surfaces settle
+- keeping installer/startup registration separate from the portable release ZIP path

@@ -4,6 +4,8 @@ This note records the corrected direction for the GridPilot MCP deployment and W
 
 The initiative is **deployment core + tray shell**, not tray-first. The tray app should be a human-facing UI over reusable deployment and diagnostics services. It must not own profile loading, agent config generation, doctor checks, smoke testing, log discovery, or diagnostic bundle construction.
 
+The portable ZIP release channel and GitHub publication flow are part of the repo release workflow now. `DEPLOY-011` still covers installer and startup-registration polish, not the existence of a public release archive.
+
 ## Direction
 
 - Keep the current MCP server, Excel COM/OLE automation, workbook routing, tool semantics, and transport internals unchanged unless a narrow status/reporting interface is explicitly required.
@@ -301,4 +303,3 @@ Use this sequence unless a later handoff explicitly changes priorities:
 9. DEPLOY-009 - Dashboard and Preview UI
 10. DEPLOY-010 - Optional Config Writers
 11. DEPLOY-011 - Packaging and Startup
-

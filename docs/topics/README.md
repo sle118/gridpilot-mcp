@@ -16,6 +16,8 @@ Focused technical notes live here when a subject needs more depth than the READM
   Governance for the deployment core plus optional Windows tray shell initiative.
 - `deployment-inventory-and-current-surface.md`
   DEPLOY-001 inventory of current launch, logging, transport, registration, tool-list, build, and packaging surfaces.
+- `public-distribution-and-release-workflow.md`
+  Public GitHub mirror and portable release ZIP workflow for people consuming GridPilot on another machine.
 
 ## Usage note
 

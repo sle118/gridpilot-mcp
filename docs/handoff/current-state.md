@@ -31,6 +31,7 @@ GridPilot MCP is now a **working local C# MCP bridge for live desktop Excel**, n
 - **Validation**
   - unit and integration coverage for the implemented surface
   - opt-in live Excel harness including attached-session checks
+  - portable Windows release ZIPs and a GitHub public mirror for external consumption
 
 ## Naming Note
 
@@ -51,6 +52,6 @@ The code still uses `ExcelMcp.*` names intentionally until a dedicated rename pa
 
 - attached-session unsafe-UI detection is still narrower than the broadened mutation surface
 - coordination between human editing and agent editing is still lease-based rather than fully modeled
-- workbook-presentation depth is still compact rather than rich
 - validation and conditional-formatting surfaces are not implemented yet
-- no dedicated public website or app shell exists; the repo itself is still the primary presentation layer
+- installer/startup registration remains separate from the portable ZIP release path
+- the public release flow is GitHub-based and intentionally lighter weight than a dedicated website or package-manager channel

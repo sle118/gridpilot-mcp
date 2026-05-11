@@ -4,19 +4,19 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 
 ## Immediate Priorities
 
-1. **Review DEPLOY-009**
-   Confirm the dashboard remains a thin optional WinForms surface over `ExcelMcp.Deployment` for profile, config preview, log, doctor, diagnostic, and smoke-test behavior.
-2. **Plan optional config writers**
-   DEPLOY-010 should add conservative config writing only after preview/copy behavior is solid.
+1. **Validate the public release flow**
+   Run the new tag-driven packaging and GitHub publish path end to end, then confirm a separate machine can download the ZIP or clone the GitHub mirror and build locally.
+2. **Review DEPLOY-010**
+   DEPLOY-010 should still add conservative config writing only after preview/copy behavior is solid.
 3. **Preserve deployment-core layering**
    Reuse the existing `ExcelMcp.ToolProxy` / `McpFrameSniffer` lessons, preserve framed and raw JSON-RPC stdio support, keep runtime logs file-backed, and keep MCP stdout JSON-RPC only.
 
 ## Recommended Next Slice
 
-After DEPLOY-009 is reviewed, the best next bounded slice is:
+After the public release flow is validated, the best next bounded slice is:
 
 - DEPLOY-010 optional config writers
-- keep startup registration and packaging out until DEPLOY-011
+- keep installer/startup registration separate from the portable ZIP release path until DEPLOY-011
 
 Config writers must stay conservative: preview diffs, back up existing files, avoid blind overwrites, support dry-run, and report exact modified paths.
 
