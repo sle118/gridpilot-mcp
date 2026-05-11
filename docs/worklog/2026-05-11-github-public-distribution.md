@@ -28,6 +28,9 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - added `docs/topics/public-distribution-and-release-workflow.md` plus README and setup-doc updates for release download and local clone/build use
 - refreshed the handoff docs and deployment inventory so the public release path is now part of the documented repo workflow
 - added a small packaging-naming helper and unit test coverage for the release ZIP naming contract
+- pinned the GitLab CI jobs to a `windows-release` runner tag so the release pipeline can target the Windows VM we will provision on the LXD host
+- hardened the GitHub publish script with explicit checks for missing CI variables after the first tagged release run exposed an empty `GITHUB_REPOSITORY_URL` in the job environment
+- hardened the GitHub publish script again after the first publish retry showed a malformed tag refspec and an auth URL echoed into the job log; the script now normalizes the release tag and uses a temporary credential store for git pushes
 
 ## Validation
 

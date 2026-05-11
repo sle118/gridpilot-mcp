@@ -5,7 +5,7 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 ## Immediate Priorities
 
 1. **Validate the public release flow**
-   Run the new tag-driven packaging and GitHub publish path end to end, then confirm a separate machine can download the ZIP or clone the GitHub mirror and build locally.
+   Run the new tag-driven packaging and GitHub publish path end to end on the `windows-release` runner VM, then confirm a separate machine can download the ZIP or clone the GitHub mirror and build locally.
 2. **Review DEPLOY-010**
    DEPLOY-010 should still add conservative config writing only after preview/copy behavior is solid.
 3. **Preserve deployment-core layering**
@@ -34,3 +34,4 @@ Config writers must stay conservative: preview diffs, back up existing files, av
 - keep COM details isolated behind interfaces
 - keep runtime logging separate from MCP stdout and proxy transport traces
 - do not put deployment-core behavior directly in the future tray project
+- keep the GitLab release jobs pinned to a Windows runner tag so provisioning stays deterministic

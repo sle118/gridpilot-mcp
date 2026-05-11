@@ -22,6 +22,35 @@ if (-not (Test-Path $AssetPath)) {
     throw "Release asset not found: $AssetPath"
 }
 
+foreach ($entry in @(
+    @{ Name = "RepositoryUrl"; Value = $RepositoryUrl },
+    @{ Name = "GitHubToken"; Value = $GitHubToken }
+)) {
+    if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) {
+        throw "$($entry.Name) is required but was empty. Check the GitLab CI/CD variable name, scope, and whether the variable is protected on this tag."
+    }
+}
+
+function Normalize-ReleaseTag {
+    param([string]$Tag)
+
+    if ([string]::IsNullOrWhiteSpace($Tag)) {
+        throw "Release version is required."
+    }
+
+    $normalized = $Tag.Trim()
+    $normalized = $normalized -replace '^refs/tags/', ''
+    $normalized = $normalized -replace '^/tags/', ''
+    $normalized = $normalized -replace '^tags/', ''
+    $normalized = $normalized.TrimStart('/')
+
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        throw "Release version '$Tag' could not be normalized."
+    }
+
+    return $normalized
+}
+
 function Get-GitHubRepositorySlug {
     param([string]$Url)
 
@@ -47,79 +76,96 @@ function Invoke-Git {
 
     & git -C $RepoRoot @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "git $($Arguments -join ' ') failed."
+        throw "git command failed."
     }
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$Version = Normalize-ReleaseTag -Tag $Version
 $slug = Get-GitHubRepositorySlug -Url $RepositoryUrl
-$authPushUrl = "https://x-access-token:$GitHubToken@github.com/$slug.git"
 
-Invoke-Git -RepoRoot $repoRoot -Arguments @("push", $authPushUrl, "HEAD:refs/heads/$MirrorBranchName", "refs/tags/$Version:refs/tags/$Version")
-
-$headers = @{
-    Authorization = "Bearer $GitHubToken"
-    Accept = "application/vnd.github+json"
-    "X-GitHub-Api-Version" = "2022-11-28"
-}
-
-$releaseApiBase = "https://api.github.com/repos/$slug/releases"
-$release = $null
+$gitCredentialPath = Join-Path $env:TEMP ("gridpilot-github-credentials-" + [Guid]::NewGuid().ToString("N") + ".txt")
+Set-Content -Path $gitCredentialPath -Value "https://x-access-token:$GitHubToken@github.com" -Encoding ASCII
 
 try {
-    $release = Invoke-RestMethod -Method Get -Uri "$releaseApiBase/tags/$Version" -Headers $headers
-}
-catch {
-    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-        $release = $null
-    }
-    else {
-        throw
-    }
-}
+    Invoke-Git -RepoRoot $repoRoot -Arguments @(
+        "-c",
+        "credential.helper=store --file=$gitCredentialPath",
+        "push",
+        "https://github.com/$slug.git",
+        "HEAD:refs/heads/$MirrorBranchName",
+        "refs/tags/$Version:refs/tags/$Version"
+    )
 
-$releaseBody = @"
+    $headers = @{
+        Authorization = "Bearer $GitHubToken"
+        Accept = "application/vnd.github+json"
+        "X-GitHub-Api-Version" = "2022-11-28"
+    }
+
+    $releaseApiBase = "https://api.github.com/repos/$slug/releases"
+    $release = $null
+
+    try {
+        $release = Invoke-RestMethod -Method Get -Uri "$releaseApiBase/tags/$Version" -Headers $headers
+    }
+    catch {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+            $release = $null
+        }
+        else {
+            throw
+        }
+    }
+
+    $releaseBody = @"
 GridPilot MCP $Version
 
 Portable Windows ZIP release with the host, proxy, tray shell, README, setup guide, and release manifest.
 "@
 
-$payload = @{
-    tag_name = $Version
-    target_commitish = $MirrorBranchName
-    name = "GridPilot MCP $Version"
-    body = $releaseBody
-    draft = $false
-    prerelease = $false
-}
+    $payload = @{
+        tag_name = $Version
+        target_commitish = $MirrorBranchName
+        name = "GridPilot MCP $Version"
+        body = $releaseBody
+        draft = $false
+        prerelease = $false
+    }
 
-if ($null -eq $release) {
-    $release = Invoke-RestMethod -Method Post -Uri $releaseApiBase -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
-}
-else {
-    $release = Invoke-RestMethod -Method Patch -Uri "$releaseApiBase/$($release.id)" -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
-}
+    if ($null -eq $release) {
+        $release = Invoke-RestMethod -Method Post -Uri $releaseApiBase -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
+    }
+    else {
+        $release = Invoke-RestMethod -Method Patch -Uri "$releaseApiBase/$($release.id)" -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 6)
+    }
 
-$assetName = Split-Path $AssetPath -Leaf
-foreach ($asset in @($release.assets)) {
-    if ($asset.name -eq $assetName) {
-        Invoke-RestMethod -Method Delete -Uri "$releaseApiBase/assets/$($asset.id)" -Headers $headers | Out-Null
+    $assetName = Split-Path $AssetPath -Leaf
+    foreach ($asset in @($release.assets)) {
+        if ($asset.name -eq $assetName) {
+            Invoke-RestMethod -Method Delete -Uri "$releaseApiBase/assets/$($asset.id)" -Headers $headers | Out-Null
+        }
+    }
+
+    $uploadUrl = ($release.upload_url -replace '\{\?name,label\}$', '')
+    $encodedAssetName = [System.Uri]::EscapeDataString($assetName)
+
+    Invoke-WebRequest `
+        -Method Post `
+        -Uri "$uploadUrl?name=$encodedAssetName" `
+        -Headers $headers `
+        -ContentType "application/zip" `
+        -InFile $AssetPath | Out-Null
+
+    [pscustomobject]@{
+        Repository = $slug
+        Version = $Version
+        ReleaseUrl = $release.html_url
+        AssetName = $assetName
     }
 }
-
-$uploadUrl = ($release.upload_url -replace '\{\?name,label\}$', '')
-$encodedAssetName = [System.Uri]::EscapeDataString($assetName)
-
-Invoke-WebRequest `
-    -Method Post `
-    -Uri "$uploadUrl?name=$encodedAssetName" `
-    -Headers $headers `
-    -ContentType "application/zip" `
-    -InFile $AssetPath | Out-Null
-
-[pscustomobject]@{
-    Repository = $slug
-    Version = $Version
-    ReleaseUrl = $release.html_url
-    AssetName = $assetName
+finally {
+    if (Test-Path $gitCredentialPath) {
+        Remove-Item $gitCredentialPath -Force -ErrorAction SilentlyContinue
+    }
 }

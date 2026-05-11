@@ -30,6 +30,7 @@ The package is meant to be usable on another Windows workstation without relying
 3. The pipeline builds the portable Windows ZIP from the current source tree.
 4. The pipeline pushes the current branch and tag to GitHub so the public mirror stays aligned.
 5. The pipeline creates or updates the GitHub Release and uploads the ZIP asset.
+6. The jobs are routed to a Windows GitLab Runner tagged `windows-release`.
 
 The implementation lives in:
 
@@ -63,3 +64,4 @@ The build output stays under the project `bin/Release` folders and remains separ
 - use the release pack script for local packaging checks
 - use the publish script when mirroring tags and uploading GitHub Releases from CI
 - keep compiled artifacts out of version control
+- provision a Windows runner VM for the release pipeline and register it with the `windows-release` tag
