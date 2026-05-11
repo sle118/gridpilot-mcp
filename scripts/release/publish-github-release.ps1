@@ -155,7 +155,7 @@ $encodedAssetName = [System.Uri]::EscapeDataString($assetName)
 
 Invoke-WebRequest `
     -Method Post `
-    -Uri "$uploadUrl?name=$encodedAssetName" `
+    -Uri "${uploadUrl}?name=$encodedAssetName" `
     -Headers $headers `
     -ContentType "application/zip" `
     -InFile $AssetPath | Out-Null

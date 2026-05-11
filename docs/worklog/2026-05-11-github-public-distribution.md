@@ -35,6 +35,7 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - replaced the git credential-store approach with an explicit non-interactive HTTP Authorization header after the `v0.1.2` retry still attempted to prompt for credentials
 - removed the stray outer `try` wrapper from the publish script after the `v0.1.3` retry revealed a parser error instead of a runtime failure
 - switched the GitHub mirror step to `git push --follow-tags` so the release tag is mirrored with the branch without a fragile manual tag refspec
+- fixed the release asset upload URI interpolation after the `v0.1.5` retry showed PowerShell treating `$uploadUrl?name` as a variable name
 
 ## Validation
 
