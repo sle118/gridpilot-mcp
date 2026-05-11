@@ -39,10 +39,7 @@ function Normalize-ReleaseTag {
     }
 
     $normalized = $Tag.Trim()
-    $normalized = $normalized -replace '^refs/tags/', ''
-    $normalized = $normalized -replace '^/tags/', ''
-    $normalized = $normalized -replace '^tags/', ''
-    $normalized = $normalized.TrimStart('/')
+    $normalized = ($normalized -split '/')[ -1 ]
 
     if ([string]::IsNullOrWhiteSpace($normalized)) {
         throw "Release version '$Tag' could not be normalized."
@@ -93,7 +90,14 @@ try {
         "credential.helper=store --file=$gitCredentialPath",
         "push",
         "https://github.com/$slug.git",
-        "HEAD:refs/heads/$MirrorBranchName",
+        "HEAD:refs/heads/$MirrorBranchName"
+    )
+
+    Invoke-Git -RepoRoot $repoRoot -Arguments @(
+        "-c",
+        "credential.helper=store --file=$gitCredentialPath",
+        "push",
+        "https://github.com/$slug.git",
         "refs/tags/$Version:refs/tags/$Version"
     )
 
