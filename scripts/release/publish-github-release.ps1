@@ -81,13 +81,20 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Version = Normalize-ReleaseTag -Tag $Version
 $slug = Get-GitHubRepositorySlug -Url $RepositoryUrl
 
-$gitCredentialPath = Join-Path $env:TEMP ("gridpilot-github-credentials-" + [Guid]::NewGuid().ToString("N") + ".txt")
-Set-Content -Path $gitCredentialPath -Value "https://x-access-token:$GitHubToken@github.com" -Encoding ASCII
+$basicAuthBytes = [System.Text.Encoding]::ASCII.GetBytes("x-access-token:$GitHubToken")
+$basicAuthValue = [Convert]::ToBase64String($basicAuthBytes)
+$gitExtraHeader = "AUTHORIZATION: Basic $basicAuthValue"
 
 try {
     Invoke-Git -RepoRoot $repoRoot -Arguments @(
         "-c",
-        "credential.helper=store --file=$gitCredentialPath",
+        "http.extraHeader=$gitExtraHeader",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "core.askPass=",
+        "-c",
+        "credential.useHttpPath=false",
         "push",
         "https://github.com/$slug.git",
         "HEAD:refs/heads/$MirrorBranchName"
@@ -95,7 +102,13 @@ try {
 
     Invoke-Git -RepoRoot $repoRoot -Arguments @(
         "-c",
-        "credential.helper=store --file=$gitCredentialPath",
+        "http.extraHeader=$gitExtraHeader",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "core.askPass=",
+        "-c",
+        "credential.useHttpPath=false",
         "push",
         "https://github.com/$slug.git",
         "refs/tags/$Version:refs/tags/$Version"
@@ -166,10 +179,5 @@ Portable Windows ZIP release with the host, proxy, tray shell, README, setup gui
         Version = $Version
         ReleaseUrl = $release.html_url
         AssetName = $assetName
-    }
-}
-finally {
-    if (Test-Path $gitCredentialPath) {
-        Remove-Item $gitCredentialPath -Force -ErrorAction SilentlyContinue
     }
 }

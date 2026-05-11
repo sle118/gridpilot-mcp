@@ -32,6 +32,7 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - hardened the GitHub publish script with explicit checks for missing CI variables after the first tagged release run exposed an empty `GITHUB_REPOSITORY_URL` in the job environment
 - hardened the GitHub publish script again after the first publish retry showed a malformed tag refspec and an auth URL echoed into the job log; the script now normalizes the release tag and uses a temporary credential store for git pushes
 - simplified release tag normalization and split the GitHub branch/tag pushes into separate git commands after the `v0.1.1` retry still surfaced a malformed tag refspec
+- replaced the git credential-store approach with an explicit non-interactive HTTP Authorization header after the `v0.1.2` retry still attempted to prompt for credentials
 
 ## Validation
 
