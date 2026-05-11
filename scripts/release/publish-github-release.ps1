@@ -95,22 +95,9 @@ Invoke-Git -RepoRoot $repoRoot -Arguments @(
     "-c",
     "credential.useHttpPath=false",
     "push",
+    "--follow-tags",
     "https://github.com/$slug.git",
     "HEAD:refs/heads/$MirrorBranchName"
-)
-
-Invoke-Git -RepoRoot $repoRoot -Arguments @(
-    "-c",
-    "http.extraHeader=$gitExtraHeader",
-    "-c",
-    "credential.helper=",
-    "-c",
-    "core.askPass=",
-    "-c",
-    "credential.useHttpPath=false",
-    "push",
-    "https://github.com/$slug.git",
-    "refs/tags/$Version:refs/tags/$Version"
 )
 
 $headers = @{
