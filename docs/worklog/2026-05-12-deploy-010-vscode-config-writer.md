@@ -22,3 +22,4 @@ Implement a conservative deployment-core writer for the VS Code / GitHub Copilot
 - embed a shared branded `.ico` asset so the tray and setup executables show the product icon in Windows shell surfaces
 - Copilot validation surfaced that some MCP tool schemas advertised nested array inputs without declaring inner `items`; tighten the emitted JSON Schema for matrix-shaped tool arguments so strict MCP clients accept `range_write`, `range_set_formulas`, and table row writers.
 - add a recursive schema audit in integration tests so every emitted MCP tool schema is checked for client-facing structural validity instead of discovering array-shape regressions one tool at a time.
+- keep the audit strict enough to reject schema leaf nodes that only carry `description`; Copilot manifest compatibility appears to need concrete schema keywords on leaf nodes as well.

@@ -2042,7 +2042,36 @@ public sealed class McpToolServerTests
             yield break;
         }
 
+        if (!HasRecognizedSchemaKeyword(schema))
+        {
+            yield return $"{toolName}: schema node at {path} does not declare a recognized schema keyword.";
+        }
+
         if (schema.TryGetProperty("type", out var typeElement) &&
+            typeElement.ValueKind != JsonValueKind.String &&
+            typeElement.ValueKind != JsonValueKind.Array)
+        {
+            yield return $"{toolName}: type at {path}.type must be a string or array of strings.";
+        }
+
+        if (schema.TryGetProperty("type", out typeElement) &&
+            typeElement.ValueKind == JsonValueKind.Array)
+        {
+            if (typeElement.GetArrayLength() == 0)
+            {
+                yield return $"{toolName}: type array at {path}.type must not be empty.";
+            }
+
+            foreach (var typeItem in typeElement.EnumerateArray())
+            {
+                if (typeItem.ValueKind != JsonValueKind.String)
+                {
+                    yield return $"{toolName}: type array at {path}.type must contain only strings.";
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("type", out typeElement) &&
             typeElement.ValueKind == JsonValueKind.String)
         {
             var schemaType = typeElement.GetString();
@@ -2058,6 +2087,23 @@ public sealed class McpToolServerTests
                     {
                         yield return violation;
                     }
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("type", out typeElement) &&
+            typeElement.ValueKind == JsonValueKind.Array &&
+            typeElement.EnumerateArray().Any(item => string.Equals(item.GetString(), "array", StringComparison.Ordinal)))
+        {
+            if (!schema.TryGetProperty("items", out var itemsElement))
+            {
+                yield return $"{toolName}: array-capable schema at {path} is missing 'items'.";
+            }
+            else
+            {
+                foreach (var violation in ValidateSchema(toolName, itemsElement, $"{path}.items"))
+                {
+                    yield return violation;
                 }
             }
         }
@@ -2105,4 +2151,16 @@ public sealed class McpToolServerTests
             }
         }
     }
+
+    private static bool HasRecognizedSchemaKeyword(JsonElement schema) =>
+        schema.TryGetProperty("type", out _) ||
+        schema.TryGetProperty("properties", out _) ||
+        schema.TryGetProperty("items", out _) ||
+        schema.TryGetProperty("enum", out _) ||
+        schema.TryGetProperty("const", out _) ||
+        schema.TryGetProperty("anyOf", out _) ||
+        schema.TryGetProperty("oneOf", out _) ||
+        schema.TryGetProperty("allOf", out _) ||
+        schema.TryGetProperty("$ref", out _) ||
+        schema.TryGetProperty("required", out _);
 }
