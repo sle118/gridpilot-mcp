@@ -160,13 +160,13 @@ public sealed class VsCodeMcpConfigWriterTests
 
         Assert.False(result.IsSuccess);
         Assert.Contains(result.Issues, issue => issue.Code == "vscode_mcp_servers_not_object");
-        Assert.Equal(
-            """
+        var expectedContent = """
             {
               "servers": 5
             }
-            """,
-            File.ReadAllText(file.Path).Replace("\r\n", "\n", StringComparison.Ordinal));
+            """.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var actualContent = File.ReadAllText(file.Path).Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Equal(expectedContent, actualContent);
     }
 
     [Fact]
