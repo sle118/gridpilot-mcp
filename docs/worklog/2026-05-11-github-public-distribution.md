@@ -38,6 +38,7 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - fixed the release asset upload URI interpolation after the `v0.1.5` retry showed PowerShell treating `$uploadUrl?name` as a variable name
 - trimmed the GitLab release job artifacts after the `v0.1.6` retry showed the coordinator rejecting the exploded release-pack directory with a 413 upload error
 - synced the upstream Windows PowerShell upload fix from `origin/main` and reduced the release job artifact path to the ZIP only so the coordinator no longer tries to archive the full unpacked release tree
+- clarified that the release package is a portable unzip-and-run Windows ZIP with no admin-required installer, and removed GitLab job artifact retention entirely because GitHub Releases is the distribution surface
 
 ## Validation
 

@@ -22,6 +22,7 @@ The portable Windows release ZIP is built from source and includes:
 - `release-manifest.json`
 
 The package is meant to be usable on another Windows workstation without relying on tracked build outputs in the repository.
+It is a portable unzip-and-run package, so it does not require admin privileges or machine-wide installation.
 
 ## Release Flow
 
@@ -31,6 +32,7 @@ The package is meant to be usable on another Windows workstation without relying
 4. The pipeline pushes the current branch and tag to GitHub so the public mirror stays aligned.
 5. The pipeline creates or updates the GitHub Release and uploads the ZIP asset.
 6. The jobs are routed to a Windows GitLab Runner tagged `windows-release`.
+7. GitLab does not retain the full ZIP as a job artifact; GitHub Releases is the distribution source.
 
 The implementation lives in:
 
