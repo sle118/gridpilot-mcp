@@ -1255,23 +1255,13 @@ public sealed class McpToolServer
     private static object BuildScalarMatrixSchema() =>
         BuildMatrixSchema(new
         {
-            anyOf = new object[]
-            {
-                new { type = "string" },
-                new { type = "number" },
-                new { type = "boolean" },
-                new { type = "null" }
-            }
+            description = "Each cell may be a string, number, boolean, or null."
         });
 
     private static object BuildFormulaMatrixSchema() =>
         BuildMatrixSchema(new
         {
-            anyOf = new object[]
-            {
-                new { type = "string" },
-                new { type = "null" }
-            }
+            description = "Each cell may be a formula string or null."
         });
 
     private static object BuildMatrixSchema(object cellSchema) =>

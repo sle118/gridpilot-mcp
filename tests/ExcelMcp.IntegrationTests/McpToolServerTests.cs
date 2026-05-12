@@ -118,6 +118,20 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public void ListTools_EmitsClientCompatibleSchemaStructure()
+    {
+        var server = CreateServer();
+
+        var violations = server.ListTools()
+            .SelectMany(tool => ValidateSchema(tool.Name, tool.InputSchema, "$"))
+            .ToArray();
+
+        Assert.True(
+            violations.Length == 0,
+            "Schema validation violations:" + Environment.NewLine + string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
     public async Task CallToolAsync_ListOpenWorkbooks_ReturnsStructuredContent()
     {
         var server = new McpToolServer(new ConnectionAwareResolver());
@@ -2016,7 +2030,79 @@ public sealed class McpToolServerTests
         var cellSchema = rowSchema.GetProperty("items");
         Assert.Equal(JsonValueKind.Object, cellSchema.ValueKind);
         Assert.True(
-            cellSchema.TryGetProperty("type", out _) || cellSchema.TryGetProperty("anyOf", out _),
-            $"Expected schema path '{string.Join(".", propertyPath)}.items.items' to declare a cell schema.");
+            cellSchema.EnumerateObject().Any(),
+            $"Expected schema path '{string.Join(".", propertyPath)}.items.items' to declare a non-empty cell schema.");
+    }
+
+    private static IEnumerable<string> ValidateSchema(string toolName, JsonElement schema, string path)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+        {
+            yield return $"{toolName}: schema node at {path} must be an object, but was {schema.ValueKind}.";
+            yield break;
+        }
+
+        if (schema.TryGetProperty("type", out var typeElement) &&
+            typeElement.ValueKind == JsonValueKind.String)
+        {
+            var schemaType = typeElement.GetString();
+            if (string.Equals(schemaType, "array", StringComparison.Ordinal))
+            {
+                if (!schema.TryGetProperty("items", out var itemsElement))
+                {
+                    yield return $"{toolName}: array schema at {path} is missing 'items'.";
+                }
+                else
+                {
+                    foreach (var violation in ValidateSchema(toolName, itemsElement, $"{path}.items"))
+                    {
+                        yield return violation;
+                    }
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("properties", out var propertiesElement))
+        {
+            if (propertiesElement.ValueKind != JsonValueKind.Object)
+            {
+                yield return $"{toolName}: properties at {path}.properties must be an object.";
+            }
+            else
+            {
+                foreach (var property in propertiesElement.EnumerateObject())
+                {
+                    foreach (var violation in ValidateSchema(toolName, property.Value, $"{path}.properties.{property.Name}"))
+                    {
+                        yield return violation;
+                    }
+                }
+            }
+        }
+
+        foreach (var combinatorName in new[] { "anyOf", "oneOf", "allOf" })
+        {
+            if (!schema.TryGetProperty(combinatorName, out var combinatorElement))
+            {
+                continue;
+            }
+
+            if (combinatorElement.ValueKind != JsonValueKind.Array)
+            {
+                yield return $"{toolName}: {combinatorName} at {path}.{combinatorName} must be an array.";
+                continue;
+            }
+
+            var index = 0;
+            foreach (var branch in combinatorElement.EnumerateArray())
+            {
+                foreach (var violation in ValidateSchema(toolName, branch, $"{path}.{combinatorName}[{index}]"))
+                {
+                    yield return violation;
+                }
+
+                index++;
+            }
+        }
     }
 }
