@@ -36,6 +36,8 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - removed the stray outer `try` wrapper from the publish script after the `v0.1.3` retry revealed a parser error instead of a runtime failure
 - switched the GitHub mirror step to `git push --follow-tags` so the release tag is mirrored with the branch without a fragile manual tag refspec
 - fixed the release asset upload URI interpolation after the `v0.1.5` retry showed PowerShell treating `$uploadUrl?name` as a variable name
+- trimmed the GitLab release job artifacts after the `v0.1.6` retry showed the coordinator rejecting the exploded release-pack directory with a 413 upload error
+- synced the upstream Windows PowerShell upload fix from `origin/main` and reduced the release job artifact path to the ZIP only so the coordinator no longer tries to archive the full unpacked release tree
 
 ## Validation
 
