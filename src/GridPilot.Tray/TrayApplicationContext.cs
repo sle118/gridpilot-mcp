@@ -60,6 +60,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         copyMenu.DropDownItems.Add(Item("Claude Code", async (_, _) => await ShowDashboardWindow().CopyAgentConfigAsync(AgentTarget.ClaudeCode)));
         copyMenu.DropDownItems.Add(Item("Generic MCP", async (_, _) => await ShowDashboardWindow().CopyAgentConfigAsync(AgentTarget.GenericMcpJson)));
         _menu.Items.Add(copyMenu);
+        _menu.Items.Add(Item("Write VS Code User Config...", async (_, _) => await ShowDashboardWindow().PreviewAndWriteVsCodeConfigAsync(), _profileContext.DiscoverInstalledInstance() is not null));
 
         _menu.Items.Add(Item("Run doctor", async (_, _) => await ShowDashboardWindow().RunDoctorAsync(), status.CanRunProfileActions));
         _menu.Items.Add(Item("Run MCP smoke test", async (_, _) => await ShowDashboardWindow().RunSmokeTestAsync(), status.CanRunProfileActions));

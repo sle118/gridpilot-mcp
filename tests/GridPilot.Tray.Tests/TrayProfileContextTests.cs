@@ -77,6 +77,18 @@ public sealed class TrayProfileContextTests
         Assert.True(status.CanRunProfileActions);
     }
 
+    [Fact]
+    public void DiscoverInstalledInstance_ReturnsInstallForInstalledTrayPath()
+    {
+        using var workspace = InstalledTrayWorkspace.Create();
+        var context = new TrayProfileContext(null);
+
+        var install = context.DiscoverInstalledInstance(workspace.InstallationService, workspace.TrayExecutablePath);
+
+        Assert.NotNull(install);
+        Assert.Equal(workspace.TrayExecutablePath, install!.Paths.TrayExecutablePath);
+    }
+
     private sealed class TrayProfileTestWorkspace : IDisposable
     {
         private TrayProfileTestWorkspace(string directoryPath, string commandPath)

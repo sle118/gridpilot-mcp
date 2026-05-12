@@ -339,7 +339,7 @@ The deployment core can emit copyable snippets for:
 - Claude Code
 - generic MCP stdio JSON
 
-The emitted snippets are preview/copy surfaces only. They do not write user config files and should not be treated as a finished setup wizard or installer.
+The emitted snippets are preview/copy surfaces only. Separately, the deployment core can conservatively preview and write the Windows VS Code user `mcp.json` file for the VS Code / GitHub Copilot target only. That writer updates only `servers.gridpilot`, preserves unrelated JSON content, creates timestamped backups before real writes, and supports dry-run preview. The tray app now exposes that writer as an explicit preview-and-confirm action when running from an installed tray instance. The setup app still does not invoke it automatically, so it should not be treated as a finished setup wizard or installer action.
 
 The repo does not yet contain durable per-client setup guides beyond the existing Codex setup and troubleshooting topic.
 
@@ -361,6 +361,14 @@ Emitter behavior:
 - returns structured warnings for target-specific omissions
 - uses `profile.Name` as the server id without normalization
 - uses LF line endings for deterministic snippet output
+
+Current VS Code writer behavior:
+
+- targets the Windows user file `%APPDATA%\\Code\\User\\mcp.json` by default
+- accepts an explicit override path
+- writes `servers.gridpilot` using installed host/log paths rather than arbitrary launch profiles
+- preserves unrelated top-level JSON content and unrelated `servers.*` entries
+- fails conservatively for malformed JSON or incompatible root shapes
 
 ## Log Locator And Diagnostic Report Surface
 
@@ -476,7 +484,7 @@ Future packaging work should treat the portable ZIP release as the current publi
 
 This inventory records current behavior only. Later slices may add:
 
-- optional config writers
+  - setup-side opt-in actions for the current optional VS Code config writer
 - deeper installer polish such as ARP/MSIX/winget integration
 
 This inventory does not add any v1 mutation policy and does not imply a tray-first architecture. The next implementation slices should continue to keep MCP/Excel internals unchanged unless a narrow deployment diagnostic interface is explicitly planned.

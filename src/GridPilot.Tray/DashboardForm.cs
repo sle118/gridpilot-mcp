@@ -26,6 +26,7 @@ internal sealed class DashboardForm : Form
     private readonly TextBox _agentPreviewTextBox;
     private readonly TextBox _agentIssuesTextBox;
     private readonly Button _copyAgentButton;
+    private readonly Button _writeVsCodeConfigButton;
     private readonly Button _runDoctorButton;
     private readonly Button _copyDoctorButton;
     private readonly TextBox _doctorResultsTextBox;
@@ -56,7 +57,7 @@ internal sealed class DashboardForm : Form
         var tabs = new TabControl { Dock = DockStyle.Fill };
 
         (_profilePathLabel, _profileStatusLabel, _profileDetailsTextBox, _lastActionTextBox) = CreateOverviewTab(tabs);
-        (_agentTargetComboBox, _agentMetadataLabel, _agentPreviewTextBox, _agentIssuesTextBox, _copyAgentButton) = CreateAgentsTab(tabs);
+        (_agentTargetComboBox, _agentMetadataLabel, _agentPreviewTextBox, _agentIssuesTextBox, _copyAgentButton, _writeVsCodeConfigButton) = CreateAgentsTab(tabs);
         (_runDoctorButton, _copyDoctorButton, _doctorResultsTextBox) = CreateDoctorTab(tabs);
         (_runSmokeButton, _copySmokeButton, _smokeResultsTextBox) = CreateSmokeTab(tabs);
         (_logListBox, _logMetadataTextBox, _logTailTextBox, _openLogFolderButton, _readLogTailButton, _copyLogTailButton) = CreateLogsTab(tabs);
@@ -98,6 +99,46 @@ internal sealed class DashboardForm : Form
 
         Clipboard.SetText(_agentPreviewTextBox.Text);
         SetLastAction($"{AgentConfigPresenter.GetDisplayName(target)} MCP config copied to clipboard.");
+        await Task.CompletedTask;
+    }
+
+    public async Task PreviewAndWriteVsCodeConfigAsync()
+    {
+        var install = _profileContext.DiscoverInstalledInstance();
+        if (install is null)
+        {
+            SetLastAction("VS Code user-config writing is only available from an installed GridPilot tray.");
+            return;
+        }
+
+        var writer = new VsCodeMcpConfigWriter();
+        var preview = writer.WriteForInstalledInstance(install, dryRun: true);
+        SetLastAction(VsCodeConfigWritePresenter.CreateLastActionMessage(preview));
+
+        using var previewDialog = new VsCodeConfigWritePreviewDialog(preview);
+        if (previewDialog.ShowDialog(this) != DialogResult.OK)
+        {
+            if (preview.Action is VsCodeMcpConfigWriteAction.Create or VsCodeMcpConfigWriteAction.Update)
+            {
+                SetLastAction("VS Code user MCP config write canceled.");
+            }
+
+            await Task.CompletedTask;
+            return;
+        }
+
+        var result = writer.WriteForInstalledInstance(install);
+        SetLastAction(VsCodeConfigWritePresenter.CreateLastActionMessage(result));
+        if (!result.IsSuccess)
+        {
+            MessageBox.Show(
+                this,
+                VsCodeConfigWritePresenter.FormatDetails(result),
+                "GridPilot MCP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
         await Task.CompletedTask;
     }
 
@@ -241,7 +282,7 @@ internal sealed class DashboardForm : Form
         return (profilePathLabel, statusLabel, detailsTextBox, lastActionTextBox);
     }
 
-    private static (ComboBox TargetComboBox, Label MetadataLabel, TextBox PreviewTextBox, TextBox IssuesTextBox, Button CopyButton) CreateAgentsTab(TabControl tabs)
+    private static (ComboBox TargetComboBox, Label MetadataLabel, TextBox PreviewTextBox, TextBox IssuesTextBox, Button CopyButton, Button WriteVsCodeButton) CreateAgentsTab(TabControl tabs)
     {
         var tab = new TabPage("Agents");
         var layout = CreateVerticalLayout(3);
@@ -255,7 +296,11 @@ internal sealed class DashboardForm : Form
         var metadataLabel = new Label { AutoSize = true };
         var previewTextBox = CreateReadOnlyTextBox();
         var issuesTextBox = CreateReadOnlyTextBox(height: 90);
-        var copyButton = new Button { Text = "Copy Preview", AutoSize = true, Anchor = AnchorStyles.Right };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
+        var copyButton = new Button { Text = "Copy Preview", AutoSize = true };
+        var writeVsCodeButton = new Button { Text = "Write VS Code User Config...", AutoSize = true };
+        buttons.Controls.Add(copyButton);
+        buttons.Controls.Add(writeVsCodeButton);
 
         layout.Controls.Add(targetComboBox, 0, 0);
         layout.Controls.Add(metadataLabel, 0, 1);
@@ -263,11 +308,11 @@ internal sealed class DashboardForm : Form
         layout.Controls.Add(previewTextBox, 0, 3);
         layout.Controls.Add(Header("Issues"), 0, 4);
         layout.Controls.Add(issuesTextBox, 0, 5);
-        layout.Controls.Add(copyButton, 0, 6);
+        layout.Controls.Add(buttons, 0, 6);
 
         tab.Controls.Add(layout);
         tabs.TabPages.Add(tab);
-        return (targetComboBox, metadataLabel, previewTextBox, issuesTextBox, copyButton);
+        return (targetComboBox, metadataLabel, previewTextBox, issuesTextBox, copyButton, writeVsCodeButton);
     }
 
     private static (Button RunButton, Button CopyButton, TextBox ResultsTextBox) CreateDoctorTab(TabControl tabs)
@@ -343,6 +388,7 @@ internal sealed class DashboardForm : Form
     {
         _agentTargetComboBox.SelectedIndexChanged += (_, _) => RefreshAgentPreview();
         _copyAgentButton.Click += async (_, _) => await CopySelectedAgentConfigAsync();
+        _writeVsCodeConfigButton.Click += async (_, _) => await PreviewAndWriteVsCodeConfigAsync();
         _runDoctorButton.Click += async (_, _) => await RunDoctorAsync();
         _copyDoctorButton.Click += (_, _) => CopyText(_doctorSummary, "Doctor results copied to clipboard.");
         _runSmokeButton.Click += async (_, _) => await RunSmokeTestAsync();
@@ -356,6 +402,8 @@ internal sealed class DashboardForm : Form
     private void RefreshAgentPreview()
     {
         var target = GetSelectedAgentTarget();
+        var install = _profileContext.DiscoverInstalledInstance();
+        var configPath = new VsCodeUserMcpConfigPathLocator().ResolvePath();
         var state = AgentConfigPresenter.CreatePreview(
             _overviewState.CanRunProfileActions ? _overviewState.Profile : null,
             target);
@@ -363,8 +411,14 @@ internal sealed class DashboardForm : Form
             ? state.DisplayName
             : $"{state.DisplayName} ({state.SuggestedFileName}, {state.Language})";
         _agentPreviewTextBox.Text = state.Content;
-        _agentIssuesTextBox.Text = state.IssuesText;
+        var availabilityNote = VsCodeConfigWritePresenter.GetAvailabilityNote(target, install, configPath);
+        _agentIssuesTextBox.Text = string.IsNullOrWhiteSpace(availabilityNote)
+            ? state.IssuesText
+            : state.IssuesText == "No issues."
+                ? availabilityNote
+                : $"{state.IssuesText}{Environment.NewLine}{Environment.NewLine}{availabilityNote}";
         _copyAgentButton.Enabled = _overviewState.CanRunProfileActions && state.CanCopy;
+        _writeVsCodeConfigButton.Enabled = VsCodeConfigWritePresenter.CanWrite(target, install);
     }
 
     private async Task CopySelectedAgentConfigAsync()

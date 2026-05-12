@@ -279,6 +279,13 @@ Validation:
 
 - Unit tests for JSON/TOML merge behavior, backup creation, dry-run, cancellation, and write failure.
 
+Status:
+
+- implemented for the VS Code / GitHub Copilot Windows user `mcp.json` file only
+- deployment-core can resolve the default user path, preview diffs, back up existing files, merge only `servers.gridpilot`, and write conservatively
+- tray now exposes an explicit preview-and-confirm action for the writer
+- setup does not invoke the writer automatically in this slice
+
 ### DEPLOY-011 - Packaging and Startup
 
 Make the deployment/tray surface easy to install and start.

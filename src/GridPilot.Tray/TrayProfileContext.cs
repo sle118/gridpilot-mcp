@@ -104,6 +104,25 @@ internal sealed record TrayProfileContext(
             : new TrayProfileStatus("Profile validation failed", CanRunProfileActions: false);
     }
 
+    public static InstalledInstanceState? DiscoverInstalledInstance(
+        string? executablePath = null,
+        InstallationService? installationService = null)
+    {
+        var resolvedExecutablePath = executablePath ?? Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(resolvedExecutablePath))
+        {
+            return null;
+        }
+
+        installationService ??= new InstallationService();
+        return installationService.DiscoverByExecutablePath(resolvedExecutablePath);
+    }
+
+    public InstalledInstanceState? DiscoverInstalledInstance(
+        InstallationService? installationService = null,
+        string? executablePath = null) =>
+        DiscoverInstalledInstance(executablePath, installationService);
+
     private static string? ResolveInstalledProfilePath(
         string? executablePath,
         InstallationService? installationService,
@@ -117,7 +136,7 @@ internal sealed record TrayProfileContext(
         installationService ??= new InstallationService();
         profileBootstrapService ??= new ProfileBootstrapService();
 
-        var install = installationService.DiscoverByExecutablePath(executablePath);
+        var install = DiscoverInstalledInstance(executablePath, installationService);
         return install is null
             ? null
             : profileBootstrapService.EnsureDefaultProfile(install);

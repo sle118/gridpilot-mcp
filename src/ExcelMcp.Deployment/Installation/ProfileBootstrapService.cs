@@ -8,6 +8,7 @@ public sealed class ProfileBootstrapService
     public string EnsureDefaultProfile(InstalledInstanceState install)
     {
         ArgumentNullException.ThrowIfNull(install);
+        var launchDefaults = InstalledHostLaunchDefaultsBuilder.Build(install);
 
         Directory.CreateDirectory(install.Paths.ProfileRoot);
         Directory.CreateDirectory(install.Paths.LogRoot);
@@ -24,18 +25,14 @@ public sealed class ProfileBootstrapService
             DisplayName = "GridPilot MCP",
             Host = new LaunchProfileHost
             {
-                Command = install.Paths.HostExecutablePath,
-                Args = ["--session-mode", "attach", "--attach-target", "workbook-owner"],
+                Command = launchDefaults.Command,
+                Args = launchDefaults.Args,
                 WorkingDirectory = null,
-                Env = new Dictionary<string, string?>
-                {
-                    ["GRIDPILOT_LOG_LEVEL"] = "info",
-                    ["GRIDPILOT_LOG_PATH"] = Path.Combine(install.Paths.LogRoot, "gridpilot-runtime.log")
-                }
+                Env = launchDefaults.Env.ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal)
             },
             Logs = new LaunchProfileLogs
             {
-                Path = Path.Combine(install.Paths.LogRoot, "gridpilot-runtime.log"),
+                Path = launchDefaults.RuntimeLogPath,
                 StdoutPolicy = "jsonRpcOnly"
             },
             Metadata = new LaunchProfileMetadata

@@ -6,8 +6,8 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 
 1. **Validate DEPLOY-011 manually**
    Run per-user install, machine-wide install, startup enable/disable, update, repair, and uninstall passes from the public ZIP on a separate Windows machine.
-2. **Review DEPLOY-010**
-   DEPLOY-010 should still add conservative config writing only after preview/copy behavior is solid.
+2. **Validate the tray DEPLOY-010 action manually**
+   Verify the new tray preview-and-write flow against real `%APPDATA%\\Code\\User\\mcp.json` content, including unrelated MCP servers, malformed JSON, dry-run preview, backup creation, and already-matching configs.
 3. **Preserve deployment-core layering**
    Reuse the existing `ExcelMcp.ToolProxy` / `McpFrameSniffer` lessons, preserve framed and raw JSON-RPC stdio support, keep runtime logs file-backed, and keep MCP stdout JSON-RPC only.
 
@@ -15,10 +15,10 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 
 After the public release flow is validated, the best next bounded slice is:
 
-- DEPLOY-010 optional config writers
-- keep install/startup behavior conservative and user-visible while DEPLOY-010 adds config writers
+- setup-side opt-in wiring for the DEPLOY-010 VS Code user config writer
+- keep install/startup behavior conservative and user-visible while config writing remains preview-first and never automatic
 
-Config writers must stay conservative: preview diffs, back up existing files, avoid blind overwrites, support dry-run, and report exact modified paths.
+Config-writing actions must stay conservative: preview diffs, back up existing files, avoid blind overwrites, support dry-run, and report exact modified paths.
 
 ## Reference
 

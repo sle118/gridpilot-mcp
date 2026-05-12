@@ -33,6 +33,8 @@ GridPilot MCP is now a **working local C# MCP bridge for live desktop Excel**, n
   - opt-in live Excel harness including attached-session checks
   - portable Windows release ZIPs and a GitHub public mirror for external consumption
   - a dedicated `GridPilot.Setup` WinForms installer for per-user and machine-wide installs
+  - deployment-core preview and conservative write support for the VS Code / GitHub Copilot user `mcp.json` file
+  - an explicit tray action to preview and write the VS Code / GitHub Copilot user `mcp.json` file from an installed tray instance
   - Windows GitLab CI jobs are now expected to run on a tagged `windows-release` runner VM
 
 ## Naming Note
@@ -56,5 +58,6 @@ The code still uses `ExcelMcp.*` names intentionally until a dedicated rename pa
 - coordination between human editing and agent editing is still lease-based rather than fully modeled
 - validation and conditional-formatting surfaces are not implemented yet
 - the new setup/install flow still needs manual validation across more Windows environments and update paths
+- setup still does not invoke the VS Code user-config writer automatically
 - the public release flow is GitHub-based and intentionally lighter weight than a dedicated website or package-manager channel
 - the GitLab release pipeline requires a Windows runner VM rather than a Linux-only runner
