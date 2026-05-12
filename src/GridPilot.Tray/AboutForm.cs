@@ -1,10 +1,14 @@
+using System.Reflection;
+using ExcelMcp.Deployment.Publishing;
+
 namespace GridPilot.Tray;
 
 internal sealed class AboutForm : Form
 {
     public AboutForm()
     {
-        Text = "About GridPilot MCP";
+        var version = ReleaseVersionLocator.GetDisplayVersion(Assembly.GetExecutingAssembly());
+        Text = $"About GridPilot MCP {version}";
         Icon = TrayBranding.TrayIcon;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -43,7 +47,7 @@ internal sealed class AboutForm : Form
 
         layout.Controls.Add(new Label
         {
-            Text = "GridPilot MCP",
+            Text = $"GridPilot MCP {version}",
             AutoSize = true,
             Font = new Font(Font.FontFamily, 16, FontStyle.Bold)
         }, 1, 0);

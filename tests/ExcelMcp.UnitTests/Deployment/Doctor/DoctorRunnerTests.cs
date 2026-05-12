@@ -112,6 +112,22 @@ public sealed class DoctorRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_SelfContainedRuntimeConfigProducesOk()
+    {
+        using var temp = DoctorTestWorkspace.Create();
+        temp.WriteSelfContainedRuntimeConfig("8.0.26");
+        var profilePath = temp.WriteProfile();
+        var runner = new DoctorRunner(excelProbe: RecordingExcelProbe.Ok());
+
+        var report = await runner.RunAsync(profilePath);
+
+        Assert.Contains(report.Results, result =>
+            result.Id == "host.runtimeconfig" &&
+            result.Severity == DoctorCheckSeverity.Ok &&
+            result.Message.Contains("self-contained deployment", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task RunAsync_MissingWorkingDirectoryProducesError()
     {
         using var temp = DoctorTestWorkspace.Create();
@@ -361,6 +377,29 @@ public sealed class DoctorRunnerTests
                         {
                             name = "Microsoft.NETCore.App",
                             version = runtimeVersion
+                        }
+                    }
+                },
+                new JsonSerializerOptions { WriteIndented = true });
+
+            File.WriteAllText(RuntimeConfigPath, json);
+        }
+
+        public void WriteSelfContainedRuntimeConfig(string runtimeVersion)
+        {
+            var json = JsonSerializer.Serialize(
+                new
+                {
+                    runtimeOptions = new
+                    {
+                        tfm = "net8.0",
+                        includedFrameworks = new[]
+                        {
+                            new
+                            {
+                                name = "Microsoft.NETCore.App",
+                                version = runtimeVersion
+                            }
                         }
                     }
                 },

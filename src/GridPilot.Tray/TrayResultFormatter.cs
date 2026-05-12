@@ -30,6 +30,26 @@ internal static class TrayResultFormatter
         var builder = new StringBuilder();
         builder.AppendLine("GridPilot MCP Smoke Test");
         builder.AppendLine();
+        builder.Append("Overall result: ")
+            .AppendLine(report.IsSuccess ? "Success" : "Attention needed");
+        if (report.DetectedTransportMode is not null)
+        {
+            builder.Append("Transport: ")
+                .AppendLine(report.DetectedTransportMode.Value.ToString());
+        }
+
+        if (report.ExitCode is not null)
+        {
+            builder.Append("Exit code: ")
+                .AppendLine(report.ExitCode.Value.ToString());
+        }
+
+        if (report.WasKilled)
+        {
+            builder.AppendLine("Cleanup: host process was terminated by the smoke test.");
+        }
+
+        builder.AppendLine();
         foreach (var result in report.Results)
         {
             builder.Append('[').Append(result.Status).Append("] ");

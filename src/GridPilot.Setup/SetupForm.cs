@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ExcelMcp.Deployment.Installation;
+using ExcelMcp.Deployment.Publishing;
 
 namespace GridPilot.Setup;
 
@@ -36,8 +37,9 @@ internal sealed class SetupForm : Form
     {
         _installationService = new InstallationService();
         _resumeState = resumeState;
+        var version = ReleaseVersionLocator.GetDisplayVersion(GetType().Assembly);
 
-        Text = "GridPilot MCP Setup";
+        Text = $"GridPilot MCP Setup {version}";
         Width = 880;
         Height = 700;
         MinimumSize = new Size(860, 680);

@@ -210,7 +210,9 @@ public sealed class DoctorRunner
         return Ok(
             "host.runtimeconfig",
             "Host runtimeconfig",
-            $"Host runtimeconfig targets {info.FrameworkName} {info.FrameworkVersion}.");
+            info.UsesIncludedFrameworks
+                ? $"Host runtimeconfig includes {info.FrameworkName} {info.FrameworkVersion} for a self-contained deployment."
+                : $"Host runtimeconfig targets {info.FrameworkName} {info.FrameworkVersion}.");
     }
 
     private static DoctorCheckResult CheckWorkingDirectory(LaunchProfile profile)

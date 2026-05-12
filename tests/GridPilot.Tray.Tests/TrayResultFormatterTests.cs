@@ -37,6 +37,8 @@ public sealed class TrayResultFormatterTests
         var text = TrayResultFormatter.FormatSmoke(report);
 
         Assert.Contains("GridPilot MCP Smoke Test", text, StringComparison.Ordinal);
+        Assert.Contains("Overall result: Attention needed", text, StringComparison.Ordinal);
+        Assert.Contains("Transport: Framed", text, StringComparison.Ordinal);
         Assert.Contains("[Failure] Tools: Missing tools.", text, StringComparison.Ordinal);
         Assert.Contains("Missing tools: range_read", text, StringComparison.Ordinal);
         Assert.Contains("stderr text", text, StringComparison.Ordinal);

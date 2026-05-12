@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Reflection;
 using ExcelMcp.Deployment.AgentConfig;
 using ExcelMcp.Deployment.Diagnostics;
 using ExcelMcp.Deployment.Doctor;
 using ExcelMcp.Deployment.Logs;
+using ExcelMcp.Deployment.Publishing;
 using ExcelMcp.Deployment.SmokeTests;
 
 namespace GridPilot.Tray;
@@ -41,8 +43,9 @@ internal sealed class DashboardForm : Form
     {
         _profileContext = profileContext;
         _overviewState = ProfileOverviewPresenter.Create(_profileContext);
+        var version = ReleaseVersionLocator.GetDisplayVersion(Assembly.GetExecutingAssembly());
 
-        Text = "GridPilot MCP Dashboard";
+        Text = $"GridPilot MCP Dashboard {version}";
         StartPosition = FormStartPosition.CenterScreen;
         Width = 980;
         Height = 720;
@@ -107,12 +110,23 @@ internal sealed class DashboardForm : Form
 
         await RunWithButtonAsync(_runDoctorButton, async () =>
         {
+            SetLastAction("Doctor running...");
             _doctorResultsTextBox.Text = "Doctor running...";
-            var report = await new DoctorRunner().RunAsync(_profileContext.ProfilePath!);
-            _doctorSummary = TrayResultFormatter.FormatDoctor(report);
-            _doctorResultsTextBox.Text = _doctorSummary;
-            _copyDoctorButton.Enabled = !string.IsNullOrWhiteSpace(_doctorSummary);
-            SetLastAction("Doctor completed.");
+            try
+            {
+                var report = await new DoctorRunner().RunAsync(_profileContext.ProfilePath!);
+                _doctorSummary = TrayResultFormatter.FormatDoctor(report);
+                _doctorResultsTextBox.Text = _doctorSummary;
+                _copyDoctorButton.Enabled = !string.IsNullOrWhiteSpace(_doctorSummary);
+                SetLastAction("Doctor completed.");
+            }
+            catch (Exception exception)
+            {
+                _doctorSummary = $"Doctor failed: {exception.Message}";
+                _doctorResultsTextBox.Text = _doctorSummary;
+                _copyDoctorButton.Enabled = true;
+                throw;
+            }
         });
     }
 
@@ -125,12 +139,23 @@ internal sealed class DashboardForm : Form
 
         await RunWithButtonAsync(_runSmokeButton, async () =>
         {
+            SetLastAction("MCP smoke test running...");
             _smokeResultsTextBox.Text = "MCP smoke test running...";
-            var report = await new McpSmokeTestRunner().RunAsync(_profileContext.ProfilePath!);
-            _smokeSummary = TrayResultFormatter.FormatSmoke(report);
-            _smokeResultsTextBox.Text = _smokeSummary;
-            _copySmokeButton.Enabled = !string.IsNullOrWhiteSpace(_smokeSummary);
-            SetLastAction("MCP smoke test completed.");
+            try
+            {
+                var report = await new McpSmokeTestRunner().RunAsync(_profileContext.ProfilePath!);
+                _smokeSummary = TrayResultFormatter.FormatSmoke(report);
+                _smokeResultsTextBox.Text = _smokeSummary;
+                _copySmokeButton.Enabled = !string.IsNullOrWhiteSpace(_smokeSummary);
+                SetLastAction("MCP smoke test completed.");
+            }
+            catch (Exception exception)
+            {
+                _smokeSummary = $"MCP smoke test failed: {exception.Message}";
+                _smokeResultsTextBox.Text = _smokeSummary;
+                _copySmokeButton.Enabled = true;
+                throw;
+            }
         });
     }
 
@@ -193,7 +218,7 @@ internal sealed class DashboardForm : Form
     private static (Label ProfilePathLabel, Label StatusLabel, TextBox DetailsTextBox, TextBox LastActionTextBox) CreateOverviewTab(TabControl tabs)
     {
         var tab = new TabPage("Overview");
-        var layout = CreateVerticalLayout();
+        var layout = CreateVerticalLayout(3);
 
         var profilePathLabel = new Label { AutoSize = true };
         var statusLabel = new Label { AutoSize = true };
@@ -219,7 +244,7 @@ internal sealed class DashboardForm : Form
     private static (ComboBox TargetComboBox, Label MetadataLabel, TextBox PreviewTextBox, TextBox IssuesTextBox, Button CopyButton) CreateAgentsTab(TabControl tabs)
     {
         var tab = new TabPage("Agents");
-        var layout = CreateVerticalLayout();
+        var layout = CreateVerticalLayout(3);
 
         var targetComboBox = new ComboBox
         {
@@ -248,7 +273,7 @@ internal sealed class DashboardForm : Form
     private static (Button RunButton, Button CopyButton, TextBox ResultsTextBox) CreateDoctorTab(TabControl tabs)
     {
         var tab = new TabPage("Doctor");
-        var layout = CreateVerticalLayout();
+        var layout = CreateVerticalLayout(1);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         var runButton = new Button { Text = "Run Doctor", AutoSize = true };
         var copyButton = new Button { Text = "Copy Results", AutoSize = true, Enabled = false };
@@ -267,7 +292,7 @@ internal sealed class DashboardForm : Form
     private static (Button RunButton, Button CopyButton, TextBox ResultsTextBox) CreateSmokeTab(TabControl tabs)
     {
         var tab = new TabPage("Smoke Test");
-        var layout = CreateVerticalLayout();
+        var layout = CreateVerticalLayout(1);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         var runButton = new Button { Text = "Run Smoke Test", AutoSize = true };
         var copyButton = new Button { Text = "Copy Results", AutoSize = true, Enabled = false };
@@ -286,7 +311,7 @@ internal sealed class DashboardForm : Form
     private static (ListBox LogListBox, TextBox MetadataTextBox, TextBox TailTextBox, Button OpenFolderButton, Button ReadTailButton, Button CopyTailButton) CreateLogsTab(TabControl tabs)
     {
         var tab = new TabPage("Logs");
-        var layout = CreateVerticalLayout();
+        var layout = CreateVerticalLayout(1, 5);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         var refreshButton = new Button { Text = "Refresh", AutoSize = true };
         var openFolderButton = new Button { Text = "Open Folder", AutoSize = true };
@@ -457,7 +482,7 @@ internal sealed class DashboardForm : Form
         SetLastAction(successMessage);
     }
 
-    private static TableLayoutPanel CreateVerticalLayout()
+    private static TableLayoutPanel CreateVerticalLayout(params int[] stretchRows)
     {
         var layout = new TableLayoutPanel
         {
@@ -466,6 +491,17 @@ internal sealed class DashboardForm : Form
             Padding = new Padding(12)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var stretchSet = stretchRows.ToHashSet();
+        layout.RowCount = stretchSet.Count == 0 ? 8 : stretchSet.Max() + 3;
+        var stretchPercent = stretchSet.Count == 0 ? 0 : 100f / stretchSet.Count;
+        for (var index = 0; index < layout.RowCount; index++)
+        {
+            var isStretchRow = stretchSet.Contains(index);
+            layout.RowStyles.Add(new RowStyle(
+                isStretchRow ? SizeType.Percent : SizeType.AutoSize,
+                isStretchRow ? stretchPercent : 0));
+        }
+
         return layout;
     }
 
