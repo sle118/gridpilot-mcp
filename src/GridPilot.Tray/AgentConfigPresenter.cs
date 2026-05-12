@@ -43,8 +43,23 @@ internal static class AgentConfigPresenter
     public static string FormatIssues(IEnumerable<AgentConfigIssue> issues)
     {
         var issueLines = issues
-            .Select(issue => $"[{issue.Severity}] {issue.Code}: {issue.Message}")
+            .SelectMany(FormatIssueLines)
             .ToArray();
         return issueLines.Length == 0 ? "No issues." : string.Join(Environment.NewLine, issueLines);
+    }
+
+    private static IEnumerable<string> FormatIssueLines(AgentConfigIssue issue)
+    {
+        yield return $"[{issue.Severity}] {issue.Code}: {issue.Message}";
+
+        switch (issue.Code)
+        {
+            case "vscode_cwd_not_emitted":
+                yield return "Resolution: remove host.workingDirectory from the launch profile when command and log paths are already absolute, or use the Codex CLI / Generic MCP target which can emit cwd.";
+                break;
+            case "claude_cwd_not_emitted":
+                yield return "Resolution: remove host.workingDirectory from the launch profile when command and log paths are already absolute, or use the Codex CLI / Generic MCP target which can emit cwd.";
+                break;
+        }
     }
 }

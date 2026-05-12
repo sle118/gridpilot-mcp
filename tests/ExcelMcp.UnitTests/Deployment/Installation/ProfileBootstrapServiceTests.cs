@@ -19,6 +19,7 @@ public sealed class ProfileBootstrapServiceTests
         Assert.Equal(install.Paths.HostExecutablePath, loaded.Profile?.Host?.Command);
         Assert.Equal(profilePath, install.Paths.DefaultProfilePath);
         Assert.Equal("jsonRpcOnly", loaded.Profile?.Logs?.StdoutPolicy);
+        Assert.Null(loaded.Profile?.Host?.WorkingDirectory);
     }
 
     [Fact]

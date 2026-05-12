@@ -26,7 +26,7 @@ public sealed class ProfileBootstrapService
             {
                 Command = install.Paths.HostExecutablePath,
                 Args = ["--session-mode", "attach", "--attach-target", "workbook-owner"],
-                WorkingDirectory = Path.GetDirectoryName(install.Paths.HostExecutablePath),
+                WorkingDirectory = null,
                 Env = new Dictionary<string, string?>
                 {
                     ["GRIDPILOT_LOG_LEVEL"] = "info",

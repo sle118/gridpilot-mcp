@@ -138,7 +138,7 @@ internal sealed class SetupForm : Form
     private TabPage CreateDetectPage()
     {
         var tab = new TabPage("Detect");
-        var layout = CreatePageLayout();
+        var layout = CreatePageLayout(stretchRowIndex: 3);
         layout.Controls.Add(Header("Release payload"), 0, 0);
         layout.Controls.Add(new Label
         {
@@ -190,7 +190,7 @@ internal sealed class SetupForm : Form
     private TabPage CreatePreviewPage()
     {
         var tab = new TabPage("Preview");
-        var layout = CreatePageLayout();
+        var layout = CreatePageLayout(stretchRowIndex: 2);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         buttons.Controls.Add(_installButton);
         buttons.Controls.Add(_uninstallButton);
@@ -205,7 +205,7 @@ internal sealed class SetupForm : Form
     private TabPage CreateExecutePage()
     {
         var tab = new TabPage("Execute");
-        var layout = CreatePageLayout();
+        var layout = CreatePageLayout(stretchRowIndex: 1);
         layout.Controls.Add(Header("Execution"), 0, 0);
         layout.Controls.Add(_executionTextBox, 0, 1);
         tab.Controls.Add(layout);
@@ -240,7 +240,7 @@ internal sealed class SetupForm : Form
         return panel;
     }
 
-    private static TableLayoutPanel CreatePageLayout()
+    private static TableLayoutPanel CreatePageLayout(int? stretchRowIndex = null)
     {
         var layout = new TableLayoutPanel
         {
@@ -251,7 +251,9 @@ internal sealed class SetupForm : Form
         };
         for (var index = 0; index < layout.RowCount; index++)
         {
-            layout.RowStyles.Add(index == 2 || index == 1 ? new RowStyle(SizeType.AutoSize) : new RowStyle(SizeType.Percent, index == 3 ? 100 : 0));
+            layout.RowStyles.Add(new RowStyle(
+                stretchRowIndex.HasValue && stretchRowIndex.Value == index ? SizeType.Percent : SizeType.AutoSize,
+                stretchRowIndex.HasValue && stretchRowIndex.Value == index ? 100 : 0));
         }
 
         return layout;
