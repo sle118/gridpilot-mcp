@@ -154,6 +154,7 @@ $uploadUrl = ($release.upload_url -replace '\{\?name,label\}$', '')
 $encodedAssetName = [System.Uri]::EscapeDataString($assetName)
 
 Invoke-WebRequest `
+    -UseBasicParsing `
     -Method Post `
     -Uri "${uploadUrl}?name=$encodedAssetName" `
     -Headers $headers `
