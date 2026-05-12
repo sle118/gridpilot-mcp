@@ -74,6 +74,8 @@ Current responsibilities:
 - build markdown-friendly diagnostic reports with environment-value redaction
 - run deployment doctor checks for profile, host executable, runtimeconfig, log paths, stdout policy, and Excel availability
 - run MCP smoke tests that validate initialize/tools-list protocol behavior
+- discover installed GridPilot instances, resolve stable install paths, and bootstrap default per-user launch profiles
+- plan and execute per-user or machine-wide setup operations, including startup registration and uninstall cleanup
 
 Current non-responsibilities:
 
@@ -107,7 +109,8 @@ Current responsibilities:
 - start as a WinForms notification-area app without opening a normal window
 - own the `NotifyIcon`, tray context menu, dashboard window, and about dialog
 - enforce a named single-instance mutex and exit a second instance cleanly
-- resolve profile path from `--profile <path>` and then `GRIDPILOT_PROFILE_PATH`
+- resolve profile path from `--profile <path>`, then `GRIDPILOT_PROFILE_PATH`, then installed-profile bootstrap for the current user
+- honor `--startup`, `--no-dashboard`, and `--open-dashboard`
 - show missing/invalid/loaded profile status
 - call deployment-core services for MCP config copy, doctor checks, smoke tests, log folder discovery, and diagnostic report copy
 - show a tabbed dashboard for overview, agent config preview/copy, doctor results, smoke-test results, and recent log tails
@@ -117,9 +120,33 @@ Current non-responsibilities:
 - no MCP/Excel internals
 - no profile loading, config generation, doctor, smoke, log, or diagnostic logic beyond calls into `ExcelMcp.Deployment`
 - no config-file writing
-- no startup registration
-- no installer, MSIX, or winget packaging
-- no automatic setup wizard or finished installer behavior
+- no direct installer logic beyond calling deployment-core services
+- no MSIX or winget packaging
+
+### `GridPilot.Setup`
+
+`src/GridPilot.Setup` builds the dedicated Windows setup wizard.
+
+Expected debug build output:
+
+```text
+src/GridPilot.Setup/bin/Debug/net8.0-windows/GridPilot.Setup.exe
+```
+
+Current responsibilities:
+
+- detect release payloads and existing installs
+- choose per-user or machine-wide install scope
+- preview install/update/repair/uninstall actions
+- relaunch elevated when machine-wide changes require it
+- call deployment-core installation/startup services
+- optionally launch the installed tray at the end of setup
+
+Current non-responsibilities:
+
+- no MCP/Excel internals
+- no direct launch-profile JSON shaping outside deployment-core bootstrap helpers
+- no package-manager registration, ARP integration, MSIX, or winget behavior
 
 Source references:
 
@@ -436,9 +463,9 @@ The current projects inherit `net8.0` from `Directory.Build.props`.
 Current packaging state:
 
 - portable Windows ZIP releases are produced from tagged pipelines and published to GitHub Releases
-- optional tray app exists as a build-output WinForms shell
+- `GridPilot.Setup.exe` and `GridPilot.Tray.exe` ship at the ZIP root
+- the setup app can install the payload into a stable per-user or machine-wide layout
 - deployment core exists as a reusable class library, not as an executable
-- no installer exists
 - no MSIX or winget package exists
 - normal contributor setup still uses build output paths and MCP client registration commands
 - the release ZIP is the public consumption path, while build outputs remain the contributor path
@@ -450,6 +477,6 @@ Future packaging work should treat the portable ZIP release as the current publi
 This inventory records current behavior only. Later slices may add:
 
 - optional config writers
-- packaging and startup registration
+- deeper installer polish such as ARP/MSIX/winget integration
 
 This inventory does not add any v1 mutation policy and does not imply a tray-first architecture. The next implementation slices should continue to keep MCP/Excel internals unchanged unless a narrow deployment diagnostic interface is explicitly planned.

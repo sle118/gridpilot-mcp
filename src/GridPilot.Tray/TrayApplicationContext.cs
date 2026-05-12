@@ -23,6 +23,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _notifyIcon.DoubleClick += (_, _) => ShowDashboardWindow();
         RebuildMenu();
+
+        if (_profileContext.OpenDashboardOnLaunch)
+        {
+            ShowDashboardWindow();
+        }
     }
 
     protected override void Dispose(bool disposing)

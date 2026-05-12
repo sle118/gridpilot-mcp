@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>GridPilot.Setup</AssemblyName>
+    <RootNamespace>GridPilot.Setup</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ExcelMcp.Deployment/ExcelMcp.Deployment.csproj" />
+  </ItemGroup>
+</Project>

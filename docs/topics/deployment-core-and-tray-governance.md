@@ -24,6 +24,7 @@ Deployment core owns:
 - diagnostic bundle/report builder
 - doctor checks
 - MCP smoke-test client
+- installation state, startup registration, and profile bootstrap
 
 Tray app owns:
 
@@ -32,6 +33,13 @@ Tray app owns:
 - dashboard/forms
 - clipboard copy actions
 - asynchronous calls into deployment-core services
+
+Setup app owns:
+
+- setup wizard flow
+- install/update/repair/uninstall UX
+- elevation relaunch UX
+- completion actions such as launch-tray or open-folder
 
 Do not place deployment-core behavior directly in the tray project. If a tray action needs deployment knowledge, call the shared library.
 
@@ -287,6 +295,10 @@ Validation:
 
 - Manual install/uninstall pass on Windows.
 - CI artifact inspection where available.
+
+Status:
+
+- implemented with `GridPilot.Setup`, deployment-core installation/startup services, tray startup flags, installed-profile bootstrap, and release-pack inclusion
 
 ## Execution Order
 

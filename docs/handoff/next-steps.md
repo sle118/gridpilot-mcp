@@ -4,8 +4,8 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 
 ## Immediate Priorities
 
-1. **Validate the public release flow**
-   Run the new tag-driven packaging and GitHub publish path end to end on the `windows-release` runner VM, then confirm a separate machine can download the ZIP or clone the GitHub mirror and build locally.
+1. **Validate DEPLOY-011 manually**
+   Run per-user install, machine-wide install, startup enable/disable, update, repair, and uninstall passes from the public ZIP on a separate Windows machine.
 2. **Review DEPLOY-010**
    DEPLOY-010 should still add conservative config writing only after preview/copy behavior is solid.
 3. **Preserve deployment-core layering**
@@ -16,7 +16,7 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
 After the public release flow is validated, the best next bounded slice is:
 
 - DEPLOY-010 optional config writers
-- keep installer/startup registration separate from the portable ZIP release path until DEPLOY-011
+- keep install/startup behavior conservative and user-visible while DEPLOY-010 adds config writers
 
 Config writers must stay conservative: preview diffs, back up existing files, avoid blind overwrites, support dry-run, and report exact modified paths.
 

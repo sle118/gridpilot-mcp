@@ -82,6 +82,11 @@ $publishTargets = @(
         Name = "tray"
         Project = "src/GridPilot.Tray/GridPilot.Tray.csproj"
         DestinationRelativePath = ""
+    },
+    @{
+        Name = "setup"
+        Project = "src/GridPilot.Setup/GridPilot.Setup.csproj"
+        DestinationRelativePath = ""
     }
 )
 
@@ -127,6 +132,7 @@ Copy-ReleaseFile -RepoRoot $repoRoot -SourceRelativePath "docs/topics/public-dis
         ".env.example"
         "docs/topics/mcp-setup-and-troubleshooting.md"
         "docs/topics/public-distribution-and-release-workflow.md"
+        "GridPilot.Setup.exe"
         "GridPilot.Tray.exe"
         "host/"
         "proxy/"

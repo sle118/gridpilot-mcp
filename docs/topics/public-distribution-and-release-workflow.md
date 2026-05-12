@@ -12,6 +12,7 @@ This note describes how GridPilot MCP is published for users outside the local G
 
 The portable Windows release ZIP is built from source and includes:
 
+- `GridPilot.Setup.exe` at the package root
 - `GridPilot.Tray.exe` at the package root
 - `README.md`
 - `.env.example`
@@ -22,7 +23,11 @@ The portable Windows release ZIP is built from source and includes:
 - `release-manifest.json`
 
 The package is meant to be usable on another Windows workstation without relying on tracked build outputs in the repository.
-It is a portable unzip-and-run package, so it does not require admin privileges or machine-wide installation.
+It is still a portable unzip-and-run package, and the embedded setup app now supports:
+
+- per-user install with no admin rights
+- machine-wide install with elevation
+- optional Windows startup registration for the tray shell
 
 ## Release Flow
 
@@ -47,7 +52,8 @@ From another computer:
 - open the GitHub repository
 - download the latest `gridpilot-mcp-vX.Y.Z-windows-x64.zip` release asset
 - unpack it and read `README.md`
-- follow `docs/topics/mcp-setup-and-troubleshooting.md` for host registration or tray launch
+- run `GridPilot.Setup.exe` for an installed layout, or launch `GridPilot.Tray.exe` directly for the portable path
+- follow `docs/topics/mcp-setup-and-troubleshooting.md` for host registration, tray startup, or troubleshooting
 
 ## Cloning And Building Locally
 

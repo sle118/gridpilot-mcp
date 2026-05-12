@@ -8,11 +8,39 @@ If you downloaded a GitHub release archive, unpack it first. The ZIP contains th
 
 Useful entry points from the unpacked archive:
 
+- `GridPilot.Setup.exe`
 - `GridPilot.Tray.exe`
 - `host\ExcelMcp.ToolHost.exe`
 - `proxy\ExcelMcp.ToolProxy.exe`
 
-The same client-registration and troubleshooting guidance below applies after you point your MCP client at the extracted `host` or `proxy` executable. The tray shell is the top-level dashboard entry point.
+Recommended usage:
+
+- run `GridPilot.Setup.exe` if you want a stable installed layout under `%LocalAppData%\GridPilot MCP\app` or `%ProgramFiles%\GridPilot MCP`
+- use `GridPilot.Tray.exe` directly when you want the fully portable unzip-and-run path
+- point your MCP client at either the extracted or installed `host\ExcelMcp.ToolHost.exe`
+
+The tray shell remains the top-level dashboard entry point.
+
+## Setup wizard
+
+`GridPilot.Setup.exe` supports:
+
+- per-user install without administrator rights
+- machine-wide install with elevation
+- optional Windows startup registration for the tray app
+- update, repair, and uninstall flows
+
+Startup registration launches:
+
+```text
+GridPilot.Tray.exe --startup --no-dashboard
+```
+
+The tray also supports:
+
+- `--startup`
+- `--no-dashboard`
+- `--open-dashboard`
 
 ## Recommended host registration
 

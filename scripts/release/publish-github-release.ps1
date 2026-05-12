@@ -48,6 +48,16 @@ function Normalize-ReleaseTag {
     return $normalized
 }
 
+function Get-ReleaseFlavor {
+    param([string]$Tag)
+
+    if ($Tag -match '(?i)(?:^|[-.+])(test|alpha|beta|preview|rc)(?:[-.+]|\d|$)') {
+        return "test"
+    }
+
+    return "stable"
+}
+
 function Get-GitHubRepositorySlug {
     param([string]$Url)
 
@@ -80,6 +90,7 @@ function Invoke-Git {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Version = Normalize-ReleaseTag -Tag $Version
 $slug = Get-GitHubRepositorySlug -Url $RepositoryUrl
+$releaseFlavor = Get-ReleaseFlavor -Tag $Version
 
 $basicAuthBytes = [System.Text.Encoding]::ASCII.GetBytes("x-access-token:$GitHubToken")
 $basicAuthValue = [Convert]::ToBase64String($basicAuthBytes)
@@ -121,19 +132,30 @@ catch {
     }
 }
 
-$releaseBody = @"
+$releaseBody = if ($releaseFlavor -eq "test") {
+@"
 GridPilot MCP $Version
 
-Portable Windows ZIP release with the host, proxy, tray shell, README, setup guide, and release manifest.
+Test release for validation and feedback.
+
+Portable Windows ZIP release with the setup app, host, proxy, tray shell, README, setup guide, and release manifest.
 "@
+}
+else {
+@"
+GridPilot MCP $Version
+
+Portable Windows ZIP release with the setup app, host, proxy, tray shell, README, setup guide, and release manifest.
+"@
+}
 
 $payload = @{
     tag_name = $Version
     target_commitish = $MirrorBranchName
-    name = "GridPilot MCP $Version"
+    name = if ($releaseFlavor -eq "test") { "GridPilot MCP $Version Test Release" } else { "GridPilot MCP $Version" }
     body = $releaseBody
     draft = $false
-    prerelease = $false
+    prerelease = ($releaseFlavor -eq "test")
 }
 
 if ($null -eq $release) {
