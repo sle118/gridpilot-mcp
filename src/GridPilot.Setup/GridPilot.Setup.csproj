@@ -5,6 +5,7 @@
     <AssemblyName>GridPilot.Setup</AssemblyName>
     <RootNamespace>GridPilot.Setup</RootNamespace>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>..\..\branding\assets\gridpilot-app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../ExcelMcp.Deployment/ExcelMcp.Deployment.csproj" />

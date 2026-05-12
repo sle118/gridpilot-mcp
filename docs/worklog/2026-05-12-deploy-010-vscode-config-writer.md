@@ -19,3 +19,4 @@ Implement a conservative deployment-core writer for the VS Code / GitHub Copilot
 - share installed host command/args/env defaults with profile bootstrap so previewed and written config do not drift
 - keep failure behavior conservative for malformed JSON or incompatible root shapes
 - expose the writer in the tray as an explicit preview-and-confirm action, but keep installer/setup auto-write out of scope
+- embed a shared branded `.ico` asset so the tray and setup executables show the product icon in Windows shell surfaces
