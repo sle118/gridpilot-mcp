@@ -71,19 +71,27 @@ $publishTargets = @(
     @{
         Name = "host"
         Project = "src/ExcelMcp.ToolHost/ExcelMcp.ToolHost.csproj"
+        DestinationRelativePath = "host"
     },
     @{
         Name = "proxy"
         Project = "src/ExcelMcp.ToolProxy/ExcelMcp.ToolProxy.csproj"
+        DestinationRelativePath = "proxy"
     },
     @{
         Name = "tray"
         Project = "src/GridPilot.Tray/GridPilot.Tray.csproj"
+        DestinationRelativePath = ""
     }
 )
 
 foreach ($target in $publishTargets) {
-    $targetOutput = Join-Path $stagingRoot $target.Name
+    $targetOutput = if ([string]::IsNullOrWhiteSpace($target.DestinationRelativePath)) {
+        $stagingRoot
+    }
+    else {
+        Join-Path $stagingRoot $target.DestinationRelativePath
+    }
     New-Item -ItemType Directory -Force -Path $targetOutput | Out-Null
 
     & dotnet publish (Join-Path $repoRoot $target.Project) `
@@ -96,6 +104,10 @@ foreach ($target in $publishTargets) {
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed for $($target.Project)."
     }
+
+    Get-ChildItem -Path $targetOutput -Recurse -File |
+        Where-Object { $_.Name -match '^.*\.pdb$|^createdump\.exe$|^mscordaccore.*\.dll$|^mscordbi\.dll$' } |
+        Remove-Item -Force
 }
 
 Copy-ReleaseFile -RepoRoot $repoRoot -SourceRelativePath "README.md" -DestinationRoot $stagingRoot -DestinationRelativePath "README.md"
@@ -103,7 +115,7 @@ Copy-ReleaseFile -RepoRoot $repoRoot -SourceRelativePath ".env.example" -Destina
 Copy-ReleaseFile -RepoRoot $repoRoot -SourceRelativePath "docs/topics/mcp-setup-and-troubleshooting.md" -DestinationRoot $stagingRoot -DestinationRelativePath "docs/topics/mcp-setup-and-troubleshooting.md"
 Copy-ReleaseFile -RepoRoot $repoRoot -SourceRelativePath "docs/topics/public-distribution-and-release-workflow.md" -DestinationRoot $stagingRoot -DestinationRelativePath "docs/topics/public-distribution-and-release-workflow.md"
 
-$manifest = [ordered]@{
+    $manifest = [ordered]@{
     version = $releaseVersion
     createdUtc = (Get-Date).ToUniversalTime().ToString("o")
     commit = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -115,9 +127,9 @@ $manifest = [ordered]@{
         ".env.example"
         "docs/topics/mcp-setup-and-troubleshooting.md"
         "docs/topics/public-distribution-and-release-workflow.md"
+        "GridPilot.Tray.exe"
         "host/"
         "proxy/"
-        "tray/"
     )
 }
 

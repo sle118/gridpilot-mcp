@@ -39,6 +39,10 @@ Make GridPilot MCP easy to discover and consume from a separate computer by publ
 - trimmed the GitLab release job artifacts after the `v0.1.6` retry showed the coordinator rejecting the exploded release-pack directory with a 413 upload error
 - synced the upstream Windows PowerShell upload fix from `origin/main` and reduced the release job artifact path to the ZIP only so the coordinator no longer tries to archive the full unpacked release tree
 - clarified that the release package is a portable unzip-and-run Windows ZIP with no admin-required installer, and removed GitLab job artifact retention entirely because GitHub Releases is the distribution surface
+- flattened the release ZIP so the tray shell lands at the package root and started wiring the tray/about UI to the GridPilot branding assets so the public package has a branded entry point instead of only raw publish outputs
+- updated the public docs and setup instructions so `GridPilot.Tray.exe` is now the obvious top-level entry point after extraction
+- fixed the release pack script target table after the root-layout change tripped PowerShell strict mode in the local dry run
+- trimmed obvious diagnostic baggage from the release package by removing symbols and crash-dump binaries after publish
 
 ## Validation
 

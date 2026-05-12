@@ -48,6 +48,7 @@ internal sealed class DashboardForm : Form
         Height = 720;
         MinimizeBox = true;
         MaximizeBox = true;
+        Icon = TrayBranding.TrayIcon;
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
 

@@ -12,13 +12,13 @@ This note describes how GridPilot MCP is published for users outside the local G
 
 The portable Windows release ZIP is built from source and includes:
 
+- `GridPilot.Tray.exe` at the package root
 - `README.md`
 - `.env.example`
 - `docs/topics/mcp-setup-and-troubleshooting.md`
 - `docs/topics/public-distribution-and-release-workflow.md`
 - `host/` publish output for `ExcelMcp.ToolHost`
 - `proxy/` publish output for `ExcelMcp.ToolProxy`
-- `tray/` publish output for `GridPilot.Tray`
 - `release-manifest.json`
 
 The package is meant to be usable on another Windows workstation without relying on tracked build outputs in the repository.

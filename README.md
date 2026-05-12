@@ -101,7 +101,7 @@ If you want to use GridPilot on another Windows machine:
 
 1. Open the public GitHub repository and download the latest `gridpilot-mcp-vX.Y.Z-windows-x64.zip` release.
 2. Unpack the archive and read `README.md` plus `docs/topics/mcp-setup-and-troubleshooting.md`.
-3. Launch `tray/GridPilot.Tray.exe` for the dashboard, or register `host/ExcelMcp.ToolHost.exe` with your MCP client.
+3. Launch `GridPilot.Tray.exe` for the dashboard, or register `host/ExcelMcp.ToolHost.exe` with your MCP client.
 
 For the release workflow and packaging details, see `docs/topics/public-distribution-and-release-workflow.md`.
 

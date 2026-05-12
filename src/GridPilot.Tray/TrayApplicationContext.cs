@@ -16,7 +16,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Opening += (_, _) => RebuildMenu();
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = TrayBranding.TrayIcon,
             Text = "GridPilot MCP",
             ContextMenuStrip = _menu,
             Visible = true

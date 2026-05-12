@@ -8,11 +8,11 @@ If you downloaded a GitHub release archive, unpack it first. The ZIP contains th
 
 Useful entry points from the unpacked archive:
 
+- `GridPilot.Tray.exe`
 - `host\ExcelMcp.ToolHost.exe`
 - `proxy\ExcelMcp.ToolProxy.exe`
-- `tray\GridPilot.Tray.exe`
 
-The same client-registration and troubleshooting guidance below applies after you point your MCP client at the extracted `host` or `proxy` executable.
+The same client-registration and troubleshooting guidance below applies after you point your MCP client at the extracted `host` or `proxy` executable. The tray shell is the top-level dashboard entry point.
 
 ## Recommended host registration
 
