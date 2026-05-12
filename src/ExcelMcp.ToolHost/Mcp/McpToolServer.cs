@@ -283,14 +283,14 @@ public sealed class McpToolServer
             BuildTargetSchema(
                 ["tableName", "values"],
                 ("tableName", new { type = "string" }),
-                ("values", new { type = "array", items = new { type = "array" } }))),
+                ("values", BuildScalarMatrixSchema()))),
         new(
             ToolNames.TableReplaceRows,
             "Replace the data body rows for an Excel table.",
             BuildTargetSchema(
                 ["tableName", "values"],
                 ("tableName", new { type = "string" }),
-                ("values", new { type = "array", items = new { type = "array" } }))),
+                ("values", BuildScalarMatrixSchema()))),
         new(
             ToolNames.TableSetOptions,
             "Update supported table options such as headers and totals visibility.",
@@ -327,7 +327,7 @@ public sealed class McpToolServer
                         {
                             sheetName = new { type = "string" },
                             address = new { type = "string" },
-                            values = new { type = "array", items = new { type = "array" } }
+                            values = BuildScalarMatrixSchema()
                         },
                         required = new[] { "sheetName", "address", "values" }
                     }
@@ -381,7 +381,7 @@ public sealed class McpToolServer
                         {
                             sheetName = new { type = "string" },
                             address = new { type = "string" },
-                            formulas = new { type = "array", items = new { type = "array" } }
+                            formulas = BuildFormulaMatrixSchema()
                         },
                         required = new[] { "sheetName", "address", "formulas" }
                     }
@@ -1250,6 +1250,39 @@ public sealed class McpToolServer
                 dimension = new { type = "string" }
             },
             required = new[] { "sheetName", "address", "dimension" }
+        };
+
+    private static object BuildScalarMatrixSchema() =>
+        BuildMatrixSchema(new
+        {
+            anyOf = new object[]
+            {
+                new { type = "string" },
+                new { type = "number" },
+                new { type = "boolean" },
+                new { type = "null" }
+            }
+        });
+
+    private static object BuildFormulaMatrixSchema() =>
+        BuildMatrixSchema(new
+        {
+            anyOf = new object[]
+            {
+                new { type = "string" },
+                new { type = "null" }
+            }
+        });
+
+    private static object BuildMatrixSchema(object cellSchema) =>
+        new
+        {
+            type = "array",
+            items = new
+            {
+                type = "array",
+                items = cellSchema
+            }
         };
 
     private static object BuildRangeFormatPatchSchema() =>

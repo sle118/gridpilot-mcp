@@ -87,6 +87,37 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public void ListTools_DeclaresStrictNestedItemsForMatrixInputs()
+    {
+        var server = CreateServer();
+
+        var tools = server.ListTools().ToDictionary(tool => tool.Name, StringComparer.Ordinal);
+
+        AssertNestedArrayItems(
+            tools[ToolNames.TableAppendRows].InputSchema,
+            "properties",
+            "values");
+        AssertNestedArrayItems(
+            tools[ToolNames.TableReplaceRows].InputSchema,
+            "properties",
+            "values");
+        AssertNestedArrayItems(
+            tools[ToolNames.RangeWrite].InputSchema,
+            "properties",
+            "writes",
+            "items",
+            "properties",
+            "values");
+        AssertNestedArrayItems(
+            tools[ToolNames.RangeSetFormulas].InputSchema,
+            "properties",
+            "writes",
+            "items",
+            "properties",
+            "formulas");
+    }
+
+    [Fact]
     public async Task CallToolAsync_ListOpenWorkbooks_ReturnsStructuredContent()
     {
         var server = new McpToolServer(new ConnectionAwareResolver());
@@ -1963,5 +1994,29 @@ public sealed class McpToolServerTests
                 MutationPermissionLastUsedAtUtc = approval.Lease?.LastUsedAtUtc
             };
         }
+    }
+
+    private static void AssertNestedArrayItems(JsonElement schema, params string[] propertyPath)
+    {
+        var element = schema;
+        foreach (var segment in propertyPath)
+        {
+            Assert.True(
+                element.TryGetProperty(segment, out element),
+                $"Expected schema path '{string.Join(".", propertyPath)}' to contain '{segment}'.");
+        }
+
+        Assert.Equal(JsonValueKind.Object, element.ValueKind);
+        Assert.Equal("array", element.GetProperty("type").GetString());
+
+        var rowSchema = element.GetProperty("items");
+        Assert.Equal(JsonValueKind.Object, rowSchema.ValueKind);
+        Assert.Equal("array", rowSchema.GetProperty("type").GetString());
+
+        var cellSchema = rowSchema.GetProperty("items");
+        Assert.Equal(JsonValueKind.Object, cellSchema.ValueKind);
+        Assert.True(
+            cellSchema.TryGetProperty("type", out _) || cellSchema.TryGetProperty("anyOf", out _),
+            $"Expected schema path '{string.Join(".", propertyPath)}.items.items' to declare a cell schema.");
     }
 }
