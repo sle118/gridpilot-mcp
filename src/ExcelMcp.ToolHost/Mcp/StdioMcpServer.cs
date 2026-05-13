@@ -62,7 +62,10 @@ internal sealed class StdioMcpServer
 
                 object? result = method switch
                 {
-                    "initialize" => _toolServer.Initialize(GetRequestedProtocolVersion(root)),
+                    "initialize" => _toolServer.Initialize(
+                        GetRequestedProtocolVersion(root),
+                        GetClientInfoValue(root, "name"),
+                        GetClientInfoValue(root, "version")),
                     "notifications/initialized" => null,
                     "tools/list" => new { tools = _toolServer.ListTools() },
                     "tools/call" => await _toolServer.CallToolAsync(
@@ -324,6 +327,21 @@ internal sealed class StdioMcpServer
             protocolVersion.ValueKind == JsonValueKind.String)
         {
             return protocolVersion.GetString();
+        }
+
+        return null;
+    }
+
+    private static string? GetClientInfoValue(JsonElement root, string propertyName)
+    {
+        if (root.TryGetProperty("params", out var parameters) &&
+            parameters.ValueKind == JsonValueKind.Object &&
+            parameters.TryGetProperty("clientInfo", out var clientInfo) &&
+            clientInfo.ValueKind == JsonValueKind.Object &&
+            clientInfo.TryGetProperty(propertyName, out var value) &&
+            value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
         }
 
         return null;

@@ -8,7 +8,9 @@ The bridge now has a broad enough workbook surface that MCP tool expansion shoul
    Run per-user install, machine-wide install, startup enable/disable, update, repair, and uninstall passes from the public ZIP on a separate Windows machine.
 2. **Validate the tray DEPLOY-010 action manually**
    Verify the new tray preview-and-write flow against real `%APPDATA%\\Code\\User\\mcp.json` content, including unrelated MCP servers, malformed JSON, dry-run preview, backup creation, and already-matching configs.
-3. **Preserve deployment-core layering**
+3. **Validate the Copilot compatibility manifest path manually**
+   Confirm that the VS Code / GitHub Copilot client receives the conservative no-array-input manifest for the affected tools and can invoke the array-heavy write operations through the string-encoded JSON compatibility path.
+4. **Preserve deployment-core layering**
    Reuse the existing `ExcelMcp.ToolProxy` / `McpFrameSniffer` lessons, preserve framed and raw JSON-RPC stdio support, keep runtime logs file-backed, and keep MCP stdout JSON-RPC only.
 
 ## Recommended Next Slice

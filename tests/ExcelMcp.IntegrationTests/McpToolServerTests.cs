@@ -132,6 +132,31 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public void ListTools_AfterCopilotInitialize_UsesConservativeScalarSchemasForArrayHeavyInputs()
+    {
+        var server = CreateServer();
+        server.Initialize("2024-11-05", "github-copilot", "1.0.0");
+
+        var tools = server.ListTools().ToDictionary(tool => tool.Name, StringComparer.Ordinal);
+
+        AssertStringPropertySchema(tools[ToolNames.TableAppendRows].InputSchema, "properties", "valuesJson");
+        AssertStringPropertySchema(tools[ToolNames.TableReplaceRows].InputSchema, "properties", "valuesJson");
+        AssertStringPropertySchema(tools[ToolNames.RangeWrite].InputSchema, "properties", "writesJson");
+        AssertStringPropertySchema(tools[ToolNames.RangeSetFormat].InputSchema, "properties", "writesJson");
+        AssertStringPropertySchema(tools[ToolNames.RangeAutofit].InputSchema, "properties", "targetsJson");
+        AssertStringPropertySchema(tools[ToolNames.RangeSetFormulas].InputSchema, "properties", "writesJson");
+        AssertStringPropertySchema(tools[ToolNames.RangeClear].InputSchema, "properties", "clearsJson");
+
+        var violations = tools.Values
+            .SelectMany(tool => ValidateCopilotConservativeSchema(tool.Name, tool.InputSchema, "$"))
+            .ToArray();
+
+        Assert.True(
+            violations.Length == 0,
+            "Copilot conservative schema violations:" + Environment.NewLine + string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
     public async Task CallToolAsync_ListOpenWorkbooks_ReturnsStructuredContent()
     {
         var server = new McpToolServer(new ConnectionAwareResolver());
@@ -852,6 +877,30 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_TableAppendRows_AcceptsValuesJsonCompatibilityArgument()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.TableAppendRows,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                tableName = "SalesTable",
+                valuesJson = "[[\"North\",1200],[\"South\",1300]]"
+            }));
+
+        Assert.False(result.IsError);
+        var call = Assert.Single(fakeWorkbook.AppendedTableRows);
+        Assert.Equal("SalesTable", call.TableName);
+        Assert.Equal("North", call.Values[0, 0]);
+        Assert.Equal(1200L, call.Values[0, 1]);
+        Assert.Equal("South", call.Values[1, 0]);
+        Assert.Equal(1300L, call.Values[1, 1]);
+    }
+
+    [Fact]
     public async Task CallToolAsync_TableSetOptions_ReturnsStructuredErrorWhenNoOptionsWereProvided()
     {
         var server = CreateServer();
@@ -1105,6 +1154,28 @@ public sealed class McpToolServerTests
         Assert.Equal(1, result.StructuredContent.GetProperty("writeCount").GetInt32());
         Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_RangeSetFormulas_AcceptsWritesJsonCompatibilityArgument()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeSetFormulas,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writesJson = "[{\"sheetName\":\"Sheet1\",\"address\":\"A1:B1\",\"formulas\":[[\"=1+1\",\"=2+2\"]]}]"
+            }));
+
+        Assert.False(result.IsError);
+        var call = Assert.Single(fakeWorkbook.WriteRangeFormulaCalls);
+        Assert.Equal("Sheet1", call.SheetName);
+        Assert.Equal("A1:B1", call.Address);
+        Assert.Equal("=1+1", call.Formulas[0, 0]);
+        Assert.Equal("=2+2", call.Formulas[0, 1]);
     }
 
     [Fact]
@@ -2034,6 +2105,20 @@ public sealed class McpToolServerTests
             $"Expected schema path '{string.Join(".", propertyPath)}.items.items' to declare a non-empty cell schema.");
     }
 
+    private static void AssertStringPropertySchema(JsonElement schema, params string[] propertyPath)
+    {
+        var element = schema;
+        foreach (var segment in propertyPath)
+        {
+            Assert.True(
+                element.TryGetProperty(segment, out element),
+                $"Expected schema path '{string.Join(".", propertyPath)}' to contain '{segment}'.");
+        }
+
+        Assert.Equal(JsonValueKind.Object, element.ValueKind);
+        Assert.Equal("string", element.GetProperty("type").GetString());
+    }
+
     private static IEnumerable<string> ValidateSchema(string toolName, JsonElement schema, string path)
     {
         if (schema.ValueKind != JsonValueKind.Object)
@@ -2163,4 +2248,46 @@ public sealed class McpToolServerTests
         schema.TryGetProperty("allOf", out _) ||
         schema.TryGetProperty("$ref", out _) ||
         schema.TryGetProperty("required", out _);
+
+    private static IEnumerable<string> ValidateCopilotConservativeSchema(string toolName, JsonElement schema, string path)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+        {
+            yield return $"{toolName}: conservative schema node at {path} must be an object.";
+            yield break;
+        }
+
+        if (schema.TryGetProperty("type", out var typeElement) &&
+            typeElement.ValueKind == JsonValueKind.String &&
+            string.Equals(typeElement.GetString(), "array", StringComparison.Ordinal))
+        {
+            yield return $"{toolName}: conservative schema contains array-typed parameter node at {path}.";
+        }
+
+        if (schema.TryGetProperty("type", out typeElement) &&
+            typeElement.ValueKind == JsonValueKind.Array)
+        {
+            yield return $"{toolName}: conservative schema contains multi-type node at {path}.";
+        }
+
+        if (schema.TryGetProperty("properties", out var propertiesElement) &&
+            propertiesElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in propertiesElement.EnumerateObject())
+            {
+                foreach (var violation in ValidateCopilotConservativeSchema(toolName, property.Value, $"{path}.properties.{property.Name}"))
+                {
+                    yield return violation;
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("items", out var itemsElement))
+        {
+            foreach (var violation in ValidateCopilotConservativeSchema(toolName, itemsElement, $"{path}.items"))
+            {
+                yield return violation;
+            }
+        }
+    }
 }

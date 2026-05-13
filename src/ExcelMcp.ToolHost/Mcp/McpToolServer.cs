@@ -10,6 +10,12 @@ namespace ExcelMcp.ToolHost.Mcp;
 
 public sealed class McpToolServer
 {
+    private enum ToolSchemaProfile
+    {
+        Default,
+        VsCodeCopilotConservative
+    }
+
     private static readonly TimeSpan DefaultToolExecutionTimeout = TimeSpan.FromSeconds(30);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -20,6 +26,7 @@ public sealed class McpToolServer
     private readonly IWorkbookServiceResolver _workbookServices;
     private readonly IGridPilotLogger _logger;
     private readonly TimeSpan _toolExecutionTimeout;
+    private ToolSchemaProfile _toolSchemaProfile = ToolSchemaProfile.Default;
 
     internal McpToolServer(
         IWorkbookServiceResolver workbookServices,
@@ -36,16 +43,20 @@ public sealed class McpToolServer
     {
     }
 
-    public McpInitializeResult Initialize(string? requestedProtocolVersion)
+    public McpInitializeResult Initialize(string? requestedProtocolVersion, string? clientName = null, string? clientVersion = null)
     {
         var protocolVersion = string.IsNullOrWhiteSpace(requestedProtocolVersion)
             ? "2024-11-05"
             : requestedProtocolVersion;
+        _toolSchemaProfile = ResolveToolSchemaProfile(clientName);
 
         _logger.LogInfo(nameof(McpToolServer), "initialize", new Dictionary<string, object?>
         {
             ["requestedProtocolVersion"] = requestedProtocolVersion,
-            ["resolvedProtocolVersion"] = protocolVersion
+            ["resolvedProtocolVersion"] = protocolVersion,
+            ["clientName"] = clientName,
+            ["clientVersion"] = clientVersion,
+            ["toolSchemaProfile"] = _toolSchemaProfile.ToString()
         });
 
         return new McpInitializeResult(
@@ -57,6 +68,7 @@ public sealed class McpToolServer
     public IReadOnlyList<McpToolDefinition> ListTools()
     {
         _logger.LogDebug(nameof(McpToolServer), "list_tools");
+        var conservativeSchema = _toolSchemaProfile == ToolSchemaProfile.VsCodeCopilotConservative;
         return
     [
         new(
@@ -280,17 +292,27 @@ public sealed class McpToolServer
         new(
             ToolNames.TableAppendRows,
             "Append one or more rectangular data rows to an Excel table.",
-            BuildTargetSchema(
-                ["tableName", "values"],
-                ("tableName", new { type = "string" }),
-                ("values", BuildScalarMatrixSchema()))),
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["tableName", "valuesJson"],
+                    ("tableName", new { type = "string" }),
+                    ("valuesJson", BuildJsonStringSchema("JSON-encoded rectangular array of arrays for the table rows to append.")))
+                : BuildTargetSchema(
+                    ["tableName", "values"],
+                    ("tableName", new { type = "string" }),
+                    ("values", BuildScalarMatrixSchema()))),
         new(
             ToolNames.TableReplaceRows,
             "Replace the data body rows for an Excel table.",
-            BuildTargetSchema(
-                ["tableName", "values"],
-                ("tableName", new { type = "string" }),
-                ("values", BuildScalarMatrixSchema()))),
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["tableName", "valuesJson"],
+                    ("tableName", new { type = "string" }),
+                    ("valuesJson", BuildJsonStringSchema("JSON-encoded rectangular array of arrays for the replacement table rows.")))
+                : BuildTargetSchema(
+                    ["tableName", "values"],
+                    ("tableName", new { type = "string" }),
+                    ("values", BuildScalarMatrixSchema()))),
         new(
             ToolNames.TableSetOptions,
             "Update supported table options such as headers and totals visibility.",
@@ -315,23 +337,27 @@ public sealed class McpToolServer
         new(
             ToolNames.RangeWrite,
             "Write one or more rectangular workbook ranges.",
-            BuildTargetSchema(
-                ["writes"],
-                ("writes", new
-                {
-                    type = "array",
-                    items = new
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["writesJson"],
+                    ("writesJson", BuildJsonStringSchema("JSON-encoded array of write objects. Each item must include sheetName, address, and values as a rectangular array of arrays.")))
+                : BuildTargetSchema(
+                    ["writes"],
+                    ("writes", new
                     {
-                        type = "object",
-                        properties = new
+                        type = "array",
+                        items = new
                         {
-                            sheetName = new { type = "string" },
-                            address = new { type = "string" },
-                            values = BuildScalarMatrixSchema()
-                        },
-                        required = new[] { "sheetName", "address", "values" }
-                    }
-                }))),
+                            type = "object",
+                            properties = new
+                            {
+                                sheetName = new { type = "string" },
+                                address = new { type = "string" },
+                                values = BuildScalarMatrixSchema()
+                            },
+                            required = new[] { "sheetName", "address", "values" }
+                        }
+                    }))),
         new(
             ToolNames.RangeGetFormat,
             "Read compact formatting state for one rectangular workbook range.",
@@ -342,23 +368,31 @@ public sealed class McpToolServer
         new(
             ToolNames.RangeSetFormat,
             "Write formatting patches into one or more rectangular workbook ranges.",
-            BuildTargetSchema(
-                ["writes"],
-                ("writes", new
-                {
-                    type = "array",
-                    items = BuildRangeFormatWriteItemSchema()
-                }))),
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["writesJson"],
+                    ("writesJson", BuildJsonStringSchema("JSON-encoded array of range format write objects. Each item must include sheetName, address, and format.")))
+                : BuildTargetSchema(
+                    ["writes"],
+                    ("writes", new
+                    {
+                        type = "array",
+                        items = BuildRangeFormatWriteItemSchema()
+                    }))),
         new(
             ToolNames.RangeAutofit,
             "Autofit rows, columns, or both for one or more workbook range targets.",
-            BuildTargetSchema(
-                ["targets"],
-                ("targets", new
-                {
-                    type = "array",
-                    items = BuildRangeAutofitTargetSchema()
-                }))),
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["targetsJson"],
+                    ("targetsJson", BuildJsonStringSchema("JSON-encoded array of autofit targets. Each item must include sheetName, address, and dimension.")))
+                : BuildTargetSchema(
+                    ["targets"],
+                    ("targets", new
+                    {
+                        type = "array",
+                        items = BuildRangeAutofitTargetSchema()
+                    }))),
         new(
             ToolNames.RangeGetFormulas,
             "Read formulas from one rectangular workbook range, returning null for non-formula cells.",
@@ -369,42 +403,50 @@ public sealed class McpToolServer
         new(
             ToolNames.RangeSetFormulas,
             "Write one or more rectangular workbook formula ranges.",
-            BuildTargetSchema(
-                ["writes"],
-                ("writes", new
-                {
-                    type = "array",
-                    items = new
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["writesJson"],
+                    ("writesJson", BuildJsonStringSchema("JSON-encoded array of formula write objects. Each item must include sheetName, address, and formulas as a rectangular array of arrays.")))
+                : BuildTargetSchema(
+                    ["writes"],
+                    ("writes", new
                     {
-                        type = "object",
-                        properties = new
+                        type = "array",
+                        items = new
                         {
-                            sheetName = new { type = "string" },
-                            address = new { type = "string" },
-                            formulas = BuildFormulaMatrixSchema()
-                        },
-                        required = new[] { "sheetName", "address", "formulas" }
-                    }
-                }))),
+                            type = "object",
+                            properties = new
+                            {
+                                sheetName = new { type = "string" },
+                                address = new { type = "string" },
+                                formulas = BuildFormulaMatrixSchema()
+                            },
+                            required = new[] { "sheetName", "address", "formulas" }
+                        }
+                    }))),
         new(
             ToolNames.RangeClear,
             "Clear contents from one or more workbook ranges while preserving formatting and layout.",
-            BuildTargetSchema(
-                ["clears"],
-                ("clears", new
-                {
-                    type = "array",
-                    items = new
+            conservativeSchema
+                ? BuildTargetSchema(
+                    ["clearsJson"],
+                    ("clearsJson", BuildJsonStringSchema("JSON-encoded array of range clear targets. Each item must include sheetName and address.")))
+                : BuildTargetSchema(
+                    ["clears"],
+                    ("clears", new
                     {
-                        type = "object",
-                        properties = new
+                        type = "array",
+                        items = new
                         {
-                            sheetName = new { type = "string" },
-                            address = new { type = "string" }
-                        },
-                        required = new[] { "sheetName", "address" }
-                    }
-                }))),
+                            type = "object",
+                            properties = new
+                            {
+                                sheetName = new { type = "string" },
+                                address = new { type = "string" }
+                            },
+                            required = new[] { "sheetName", "address" }
+                        }
+                    }))),
         new(
             ToolNames.CalculationRecalculate,
             "Recalculate workbook, worksheet, or range targets without implicitly saving the workbook.",
@@ -480,10 +522,12 @@ public sealed class McpToolServer
     {
         try
         {
+            var normalizedArguments = NormalizeCompatibilityArguments(name, arguments);
+
             _logger.LogInfo(nameof(McpToolServer), "tool_call_started", new Dictionary<string, object?>
             {
                 ["toolName"] = name,
-                ["argumentKeys"] = GetArgumentKeys(arguments)
+                ["argumentKeys"] = GetArgumentKeys(normalizedArguments)
             });
 
             _logger.LogDebug(nameof(McpToolServer), "tool_call_dispatching", new Dictionary<string, object?>
@@ -492,7 +536,7 @@ public sealed class McpToolServer
             });
 
             var toolTask = Task.Run(
-                async () => await DispatchToolAsync(name, arguments, cancellationToken).ConfigureAwait(false),
+                async () => await DispatchToolAsync(name, normalizedArguments, cancellationToken).ConfigureAwait(false),
                 cancellationToken);
             var timeoutTask = Task.Delay(_toolExecutionTimeout, cancellationToken);
             var completedTask = await Task.WhenAny(toolTask, timeoutTask).ConfigureAwait(false);
@@ -1252,6 +1296,13 @@ public sealed class McpToolServer
             required = new[] { "sheetName", "address", "dimension" }
         };
 
+    private static object BuildJsonStringSchema(string description) =>
+        new
+        {
+            type = "string",
+            description
+        };
+
     private static object BuildScalarMatrixSchema() =>
         BuildMatrixSchema(new
         {
@@ -1302,6 +1353,19 @@ public sealed class McpToolServer
     private static JsonElement ToJsonElement(object value) =>
         JsonSerializer.SerializeToElement(value, JsonOptions);
 
+    private static ToolSchemaProfile ResolveToolSchemaProfile(string? clientName)
+    {
+        if (string.IsNullOrWhiteSpace(clientName))
+        {
+            return ToolSchemaProfile.Default;
+        }
+
+        return clientName.Contains("copilot", StringComparison.OrdinalIgnoreCase) ||
+               clientName.Contains("vscode", StringComparison.OrdinalIgnoreCase)
+            ? ToolSchemaProfile.VsCodeCopilotConservative
+            : ToolSchemaProfile.Default;
+    }
+
     private static string[] GetArgumentKeys(JsonElement arguments)
     {
         if (arguments.ValueKind != JsonValueKind.Object)
@@ -1313,6 +1377,61 @@ public sealed class McpToolServer
             .Select(property => property.Name)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static JsonElement NormalizeCompatibilityArguments(string toolName, JsonElement arguments) =>
+        toolName switch
+        {
+            ToolNames.TableAppendRows => ExpandJsonStringProperty(arguments, "values", "valuesJson"),
+            ToolNames.TableReplaceRows => ExpandJsonStringProperty(arguments, "values", "valuesJson"),
+            ToolNames.RangeWrite => ExpandJsonStringProperty(arguments, "writes", "writesJson"),
+            ToolNames.RangeSetFormat => ExpandJsonStringProperty(arguments, "writes", "writesJson"),
+            ToolNames.RangeAutofit => ExpandJsonStringProperty(arguments, "targets", "targetsJson"),
+            ToolNames.RangeSetFormulas => ExpandJsonStringProperty(arguments, "writes", "writesJson"),
+            ToolNames.RangeClear => ExpandJsonStringProperty(arguments, "clears", "clearsJson"),
+            _ => arguments
+        };
+
+    private static JsonElement ExpandJsonStringProperty(JsonElement arguments, string propertyName, string jsonPropertyName)
+    {
+        if (arguments.ValueKind != JsonValueKind.Object ||
+            arguments.TryGetProperty(propertyName, out _) ||
+            !arguments.TryGetProperty(jsonPropertyName, out var jsonProperty) ||
+            jsonProperty.ValueKind != JsonValueKind.String)
+        {
+            return arguments;
+        }
+
+        var jsonText = jsonProperty.GetString();
+        if (string.IsNullOrWhiteSpace(jsonText))
+        {
+            throw new McpToolInputException("invalid_arguments", $"'{jsonPropertyName}' must be a non-empty JSON string.");
+        }
+
+        JsonElement parsedElement;
+        try
+        {
+            using var document = JsonDocument.Parse(jsonText);
+            parsedElement = document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new McpToolInputException("invalid_arguments", $"'{jsonPropertyName}' must contain valid JSON. {ex.Message}");
+        }
+
+        var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var property in arguments.EnumerateObject())
+        {
+            if (string.Equals(property.Name, jsonPropertyName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            merged[property.Name] = property.Value.Clone();
+        }
+
+        merged[propertyName] = parsedElement;
+        return JsonSerializer.SerializeToElement(merged, JsonOptions);
     }
 
     private static RangeWriteRequest GetRangeWriteRequest(JsonElement element)
