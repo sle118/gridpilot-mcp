@@ -18,6 +18,10 @@ Focused technical notes live here when a subject needs more depth than the READM
   DEPLOY-001 inventory of current launch, logging, transport, registration, tool-list, build, and packaging surfaces.
 - `public-distribution-and-release-workflow.md`
   Public GitHub mirror and portable release ZIP workflow for people consuming GridPilot on another machine.
+- `agent-live-testing-guide.md`
+  Repeatable playbook for live agents running Windows + Excel validation and reporting back in a consistent format.
+- `agent-driven-gridpilot-validation-guide.md`
+  Companion guide for live agents to install or launch GridPilot, register the MCP host, drive representative tool flows, and report product-level findings.
 
 ## Usage note
 

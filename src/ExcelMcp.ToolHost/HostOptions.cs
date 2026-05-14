@@ -1,5 +1,6 @@
 using ExcelMcp.Core;
 using ExcelMcp.Core.Logging;
+using ExcelMcp.ToolHost.Diagnostics;
 
 namespace ExcelMcp.ToolHost;
 
@@ -16,13 +17,27 @@ internal sealed record HostOptions(
     GridPilotLogLevel LogLevel,
     string? LogPath)
 {
-    public static HostOptions Parse(string[] args)
+    public GridPilotLogLevel BaseLogLevel { get; init; } = LogLevel;
+
+    public string EffectiveLogPath { get; init; } = LogPath ?? Path.Combine(Environment.CurrentDirectory, ".tmp", "gridpilot-runtime.log");
+
+    public string RuntimeDiagnosticsSettingsPath { get; init; } = RuntimeDiagnosticsOverrideStore.GetDefaultSettingsPath();
+
+    public GridPilotLogLevel? PersistentLogLevelOverride { get; init; }
+
+    public bool PersistentLogLevelOverrideApplied { get; init; }
+
+    public static HostOptions Parse(string[] args) =>
+        Parse(args, null);
+
+    internal static HostOptions Parse(string[] args, RuntimeDiagnosticsOverrideStore? diagnosticsOverrideStore)
     {
         var mode = ReadModeFromEnvironment();
         var attachTarget = ReadAttachTargetFromEnvironment();
         var visible = ReadVisibleFromEnvironment();
-        var logLevel = ReadLogLevelFromEnvironment();
+        var baseLogLevel = ReadLogLevelFromEnvironment();
         var logPath = ReadLogPathFromEnvironment();
+        var logLevelSpecifiedByArgs = false;
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -50,7 +65,8 @@ internal sealed record HostOptions(
             if (string.Equals(argument, "--log-level", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
             {
                 index++;
-                logLevel = ParseLogLevel(args[index]);
+                baseLogLevel = ParseLogLevel(args[index]);
+                logLevelSpecifiedByArgs = true;
                 continue;
             }
 
@@ -62,16 +78,32 @@ internal sealed record HostOptions(
             }
         }
 
-        if (logLevel != GridPilotLogLevel.Off && string.IsNullOrWhiteSpace(logPath))
+        var settingsStore = diagnosticsOverrideStore ?? new RuntimeDiagnosticsOverrideStore();
+        var overrideState = settingsStore.ReadState();
+        var effectiveLogLevel = !logLevelSpecifiedByArgs && overrideState.LogLevelOverride is not null
+            ? overrideState.LogLevelOverride.Value
+            : baseLogLevel;
+        var effectiveLogPath = string.IsNullOrWhiteSpace(logPath)
+            ? System.IO.Path.Combine(Environment.CurrentDirectory, ".tmp", "gridpilot-runtime.log")
+            : logPath!;
+
+        if (effectiveLogLevel != GridPilotLogLevel.Off && string.IsNullOrWhiteSpace(logPath))
         {
-            logPath = System.IO.Path.Combine(Environment.CurrentDirectory, ".tmp", "gridpilot-runtime.log");
+            logPath = effectiveLogPath;
         }
 
-        return new HostOptions(mode, attachTarget, visible, logLevel, logPath);
+        return new HostOptions(mode, attachTarget, visible, effectiveLogLevel, logPath)
+        {
+            BaseLogLevel = baseLogLevel,
+            EffectiveLogPath = effectiveLogPath,
+            RuntimeDiagnosticsSettingsPath = settingsStore.SettingsPath,
+            PersistentLogLevelOverride = overrideState.LogLevelOverride,
+            PersistentLogLevelOverrideApplied = !logLevelSpecifiedByArgs && overrideState.LogLevelOverride is not null
+        };
     }
 
     public string ToStartupSummary() =>
-        $"GridPilot MCP starting with sessionMode={SessionModeToString(SessionMode)}, attachTarget={AttachTargetToString(AttachTarget)}, visible={Visible.ToString().ToLowerInvariant()}, logLevel={LogLevelToString(LogLevel)}, logPath={LogPath ?? "(none)"}."; 
+        $"GridPilot MCP starting with sessionMode={SessionModeToString(SessionMode)}, attachTarget={AttachTargetToString(AttachTarget)}, visible={Visible.ToString().ToLowerInvariant()}, logLevel={LogLevelToString(LogLevel)}, logPath={LogPath ?? "(none)"}, baseLogLevel={LogLevelToString(BaseLogLevel)}, persistentLogLevelOverride={PersistentLogLevelOverride?.ToString().ToLowerInvariant() ?? "(none)"}.";
 
     private static SessionMode ParseMode(string value) =>
         value.Trim().ToLowerInvariant() switch

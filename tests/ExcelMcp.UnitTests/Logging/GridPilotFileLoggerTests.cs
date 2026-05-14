@@ -56,4 +56,25 @@ public sealed class GridPilotFileLoggerTests
         Assert.Equal(20, lines.Length);
         Assert.All(lines, line => Assert.StartsWith("{", line, StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task MutableLogger_CanEnableLoggingAfterStartingOff()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "gridpilot-tests", Guid.NewGuid().ToString("N"));
+        var logPath = Path.Combine(tempDirectory, "runtime.log");
+
+        await using (var logger = GridPilotLoggerFactory.Create(GridPilotLogLevel.Off, logPath))
+        {
+            logger.LogInfo("Test", "ignored");
+            Assert.False(File.Exists(logPath));
+
+            logger.UpdateLevel(GridPilotLogLevel.Debug);
+            logger.LogDebug("WorkbookServiceResolver", "connect_requested", new Dictionary<string, object?> { ["workbookPath"] = @"C:\temp\book.xlsx" });
+        }
+
+        var line = Assert.Single(await File.ReadAllLinesAsync(logPath));
+        using var document = JsonDocument.Parse(line);
+        Assert.Equal("debug", document.RootElement.GetProperty("level").GetString());
+        Assert.Equal("connect_requested", document.RootElement.GetProperty("event").GetString());
+    }
 }

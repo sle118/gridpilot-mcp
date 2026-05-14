@@ -14,6 +14,19 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public IReadOnlyList<QuerySummary> Queries { get; set; } = Array.Empty<QuerySummary>();
     public IReadOnlyList<ConnectionSummary> Connections { get; set; } = Array.Empty<ConnectionSummary>();
     public IReadOnlyList<NameSummary> Names { get; set; } = Array.Empty<NameSummary>();
+    public QueryDetail QueryDetail { get; set; } = new("SalesQuery", "let Source = 1 in Source", null, QueryLoadModes.None, null, null, null, "query:SalesQuery");
+    public ConnectionDetail ConnectionDetail { get; set; } = new("Query - SalesQuery", "2", true, null, null, null, null, "SalesQuery", Array.Empty<string>(), "connection:Query - SalesQuery");
+    public WorkbookDependencyGraph DependencyGraph { get; set; } = new(Array.Empty<WorkbookDependencyNode>(), Array.Empty<WorkbookDependencyEdge>());
+    public WorkbookStructureState WorkbookStructureState { get; set; } = new(WorkbookVisibilityModes.Visible, new WorkbookProtectionState(false, false, false));
+    public WorkbookProtectionState WorkbookProtectionState { get; set; } = new(false, false, false);
+    public List<QueryCreateRequest> CreatedQueries { get; } = [];
+    public List<QueryRenameRequest> RenamedQueries { get; } = [];
+    public List<string> DeletedQueries { get; } = [];
+    public List<ConnectionRenameRequest> RenamedConnections { get; } = [];
+    public List<ConnectionUpdateRequest> UpdatedConnections { get; } = [];
+    public List<string> DeletedConnections { get; } = [];
+    public List<WorkbookVisibilityRequest> WorkbookVisibilityChanges { get; } = [];
+    public List<WorkbookProtectionUpdateRequest> WorkbookProtectionChanges { get; } = [];
     public List<(string QueryName, string Formula)> SetQueryFormulaCalls { get; } = [];
     public List<(string Name, string RefersTo, string? SheetName)> CreatedNames { get; } = [];
     public List<(string Name, string RefersTo, string? SheetName)> UpdatedNames { get; } = [];
@@ -40,6 +53,8 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public List<WorksheetMoveRequest> MovedWorksheets { get; } = [];
     public List<WorksheetCopyRequest> CopiedWorksheets { get; } = [];
     public List<WorksheetVisibilityRequest> WorksheetVisibilityChanges { get; } = [];
+    public Func<QueryProbeRequest, Task<ProbeResult>> OnRunProbeAsync { get; set; } =
+        request => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
     public int SaveCallCount { get; private set; }
     public int SaveAsCallCount { get; private set; }
 
@@ -62,6 +77,64 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
     public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Connections);
     public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult(Names);
     public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, "let Source = 1 in Source"));
+    public Task<QueryDetail> GetQueryDetailAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(QueryDetail with { Name = queryName, DependencyNodeId = $"query:{queryName}" });
+    public Task CreateQueryAsync(QueryCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        CreatedQueries.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task RenameQueryAsync(QueryRenameRequest request, CancellationToken cancellationToken = default)
+    {
+        RenamedQueries.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteQueryAsync(string queryName, CancellationToken cancellationToken = default)
+    {
+        DeletedQueries.Add(queryName);
+        return Task.CompletedTask;
+    }
+
+    public Task<ConnectionDetail> GetConnectionAsync(string connectionName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ConnectionDetail with { Name = connectionName, DependencyNodeId = $"connection:{connectionName}" });
+
+    public Task RenameConnectionAsync(ConnectionRenameRequest request, CancellationToken cancellationToken = default)
+    {
+        RenamedConnections.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateConnectionAsync(ConnectionUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        UpdatedConnections.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteConnectionAsync(string connectionName, CancellationToken cancellationToken = default)
+    {
+        DeletedConnections.Add(connectionName);
+        return Task.CompletedTask;
+    }
+
+    public Task<WorkbookDependencyGraph> GetDependencyGraphAsync(CancellationToken cancellationToken = default) => Task.FromResult(DependencyGraph);
+
+    public Task<WorkbookStructureState> GetWorkbookStructureStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(WorkbookStructureState);
+
+    public Task<WorkbookProtectionState> GetWorkbookProtectionStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(WorkbookProtectionState);
+
+    public Task SetWorkbookVisibilityAsync(WorkbookVisibilityRequest request, CancellationToken cancellationToken = default)
+    {
+        WorkbookVisibilityChanges.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task SetWorkbookProtectionAsync(WorkbookProtectionUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        WorkbookProtectionChanges.Add(request);
+        return Task.CompletedTask;
+    }
+
     public Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, sheetName is null ? "Workbook" : "Worksheet", sheetName, "=Sheet1!$A$1", "$A$1"));
     public Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default)
     {
@@ -84,7 +157,7 @@ internal sealed class FakeWorkbookHandle : IWorkbookHandle
         return Task.CompletedTask;
     }
     public Task<RefreshResult> RefreshQueryAsync(string queryName, RefreshOptions? options = null, CancellationToken cancellationToken = default) => Task.FromResult(new RefreshResult(true, queryName, "query", TimeSpan.Zero));
-    public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new ProbeResult(true, request.TargetQueryName, request.TempQueryName));
+    public Task<ProbeResult> RunQueryProbeAsync(QueryProbeRequest request, CancellationToken cancellationToken = default) => OnRunProbeAsync(request);
     public Task<CleanupResult> CleanupTempQueriesAsync(string prefixOrPattern, CancellationToken cancellationToken = default) => Task.FromResult(new CleanupResult(0, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<OperationError>()));
     public Task<RangeData> ReadRangeAsync(string address, string? sheetName = null, CancellationToken cancellationToken = default)
     {

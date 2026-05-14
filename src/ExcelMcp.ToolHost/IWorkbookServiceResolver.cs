@@ -35,6 +35,13 @@ internal interface IWorkbookServiceResolver
 
     Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default);
 
+    Task<SessionDiagnostics> GetSessionDiagnosticsAsync(
+        WorkbookTarget target,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<SessionDiagnostics>(new WorkbookTargetResolutionException(
+            "runtime_diagnostics_not_available",
+            "Session diagnostics are not available on this workbook service resolver."));
+
     Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(
         MutationPermissionGrantRequest request,
         TimeSpan? ttl = null,

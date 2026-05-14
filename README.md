@@ -10,7 +10,7 @@ GridPilot MCP is a local automation bridge for Microsoft Excel. It gives coding 
 
 Excel remains the **data plane**. GridPilot becomes the **control plane**.
 
-Agents work through scoped MCP tools for sessions, ranges, formulas, worksheets, tables, Power Query definitions, names, formatting, refreshes, and diagnostics. The bridge owns the risky and boring parts: routing, COM interaction, mutation permissions, cleanup, retries, logging, and structured failure reporting.
+Agents work through scoped MCP tools for sessions, ranges, formulas, worksheets, tables, Power Query definitions, workbook connections, names, formatting, refreshes, workbook structure, and diagnostics. The bridge owns the risky and boring parts: routing, COM interaction, mutation permissions, cleanup, retries, logging, structured failure reporting, and agent-facing workflow guidance.
 
 This is not about unattended spreadsheet chaos. It is about safe human + agent collaboration on the Excel files people actually use.
 
@@ -53,7 +53,7 @@ Discover running Excel instances, list open workbooks, attach by workbook name o
 
 ### Workbook structure
 
-Inventory sheets, queries, connections, tables, and names. Create, rename, delete, move, copy, reorder, and hide worksheets, including `veryHidden` visibility.
+Inventory sheets, queries, connections, tables, and names. Create, rename, delete, move, copy, reorder, and hide worksheets, including `veryHidden` visibility. Read workbook dependency graphs, inspect workbook protection state, and control workbook window visibility plus structure/window protection.
 
 ### Ranges, formulas, and layout
 
@@ -61,15 +61,15 @@ Read and write rectangular values, formulas, compact formatting snapshots, row h
 
 ### Power Query
 
-Read query definitions, update query formulas, run targeted refreshes, execute diagnostic probes, and clean up temporary diagnostic queries. This gives agents a path for schema checks, dependency investigation, and controlled refresh workflows.
+Read query definitions and richer query detail, create/rename/delete queries, update query formulas, run targeted refreshes, execute diagnostic probes, and clean up temporary diagnostic queries. This gives agents a path for schema checks, dependency investigation, controlled refresh workflows, and query-owned connection creation.
 
 ### Tables and names
 
-Create, resize, append, replace, delete, and configure Excel tables. List, resolve, read, create, update, or delete workbook- and worksheet-scoped names.
+Create, resize, append, replace, delete, and configure Excel tables. Read, rename, update, and delete workbook data connections. List, resolve, read, create, update, or delete workbook- and worksheet-scoped names.
 
 ### Diagnostics and safety
 
-Run workbook-, worksheet-, and range-scoped recalculation. Inspect compact formula and literal errors. Use mutation-permission leases for attached sessions. Capture runtime logs across the host, bridge, and COM adapter.
+Run workbook-, worksheet-, and range-scoped recalculation. Inspect compact formula and literal errors. Use mutation-permission leases for attached sessions. Read session diagnostics, inspect runtime state, list/tail relevant logs, build redacted diagnostic reports, and raise or reset host logging without polluting MCP stdout.
 
 <p align="center">
   <img src="branding/assets/surface-map.svg" alt="Workbook surfaces available through GridPilot MCP" width="920">
@@ -85,9 +85,9 @@ Run workbook-, worksheet-, and range-scoped recalculation. Inspect compact formu
 
 GridPilot runs locally beside desktop Excel.
 
-A typical MCP client starts or connects to the GridPilot host. The host attaches to an existing workbook session or creates a new workbook, then returns a `connectionId`. Later tool calls use that `connectionId` so operations stay routed to the intended workbook.
+A typical MCP client starts or connects to the GridPilot host. The host attaches to an existing workbook session or creates a new workbook, then returns a `connectionId`. Later tool calls use that `connectionId` so operations stay routed to the intended workbook. Success results now echo target context and recommended next tools so agents can keep their footing after longer planning or data-gathering detours.
 
-The C# bridge translates scoped workbook requests into controlled Excel COM operations. Runtime logs and structured errors make failures inspectable when Excel behaves unexpectedly.
+The C# bridge translates scoped workbook requests into controlled Excel COM operations. Runtime logs, session/runtime diagnostics, and structured remediation hints make failures inspectable when Excel behaves unexpectedly.
 
 <p align="center">
   <img src="branding/assets/workflow-overview.svg" alt="Normal MCP workbook flow" width="920">
@@ -155,7 +155,7 @@ The current safety model includes:
 2. Attach to an open workbook or create a new one.
 3. Connect and receive a `connectionId`.
 4. Inspect, edit, refresh, and diagnose through scoped tools.
-5. Enable runtime logging when troubleshooting real Excel behavior.
+5. If something goes wrong, reuse `connectionId`, call `session_get_diagnostics` or the `diagnostics_*` tools, and only then retry or escalate.
 
 For setup commands, client registration details, and troubleshooting notes, use:
 
@@ -185,4 +185,6 @@ Near-term work is focused on:
 - keeping the portable ZIP release flow and GitHub mirror in sync
 - adding conservative optional config writers only after preview/copy behavior is stable
 - keeping runtime logs file-backed and MCP stdout JSON-RPC only
+- validating the new agent guidance and MCP-first diagnosis surface against real attached-session failures
 - validating the new setup wizard, installed layout, and startup-registration flow
+- validating the new query lifecycle, connection lifecycle, dependency graph, and workbook protection/visibility surfaces against live Excel edge cases

@@ -302,6 +302,54 @@ internal sealed class WorkbookServiceResolver : IWorkbookServiceResolver, IAsync
         return new WorkbookDisconnectResult(true, connectionId, removed.WorkbookPath, true);
     }
 
+    public async Task<SessionDiagnostics> GetSessionDiagnosticsAsync(WorkbookTarget target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var explicitPath = NormalizePathOrNull(target.WorkbookPath);
+        var connectionId = NormalizeIdentifier(target.ConnectionId);
+
+        if (connectionId is not null)
+        {
+            ConnectedWorkbookConnection connection;
+            lock (_gate)
+            {
+                if (!_connectionsById.TryGetValue(connectionId, out connection!))
+                {
+                    throw new WorkbookTargetResolutionException(
+                        "connection_not_found",
+                        $"No workbook connection with id '{connectionId}' exists.");
+                }
+            }
+
+            return await connection.Session.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (explicitPath is null)
+        {
+            throw new WorkbookTargetResolutionException(
+                "workbook_target_required",
+                "Session diagnostics require either 'workbookPath' or 'connectionId'.");
+        }
+
+        if (_options.SessionMode == SessionMode.Attach &&
+            _options.AttachTarget == SessionAttachTargetMode.WorkbookOwner)
+        {
+            var session = ExcelApplicationSession.AttachToRunning(SessionAttachTarget.ForWorkbook(explicitPath), _logger);
+            try
+            {
+                return await session.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        var (sharedSession, _) = GetOrCreateDefaultSharedService();
+        return await sharedSession.GetDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(
         MutationPermissionGrantRequest request,
         TimeSpan? ttl = null,

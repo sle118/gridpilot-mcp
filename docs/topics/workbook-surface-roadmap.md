@@ -29,6 +29,10 @@ The bridge currently supports:
 - workbook/worksheet/range recalculation
 - workbook/worksheet/range error inspection with compact diagnostic hit lists
 - worksheet move, copy, reordering, and three-state visibility control
+- workbook dependency graph reads
+- workbook visibility and workbook protection reads/updates
+- query create/rename/delete and richer query detail
+- workbook data connection detail, rename, update, and delete
 
 ## Next five surfaces to prioritize
 
@@ -43,15 +47,15 @@ The bridge currently supports:
    - support overwrite-safety and worksheet hygiene checks
 
 3. Broader workbook structure operations
-   - extend beyond current worksheet move/copy/visibility into workbook-level protection, visibility, and layout helpers
-   - support broader workbook orchestration while keeping COM isolated
+   - workbook-level protection and visibility controls are now implemented
+   - broader workbook layout helpers remain future work
 
 ## Following five surfaces after that
 
 4. Query and connection lifecycle
-   - create, delete, and rename queries
-   - create or update connections
-   - inspect dependency relationships between queries, connections, tables, and load targets
+   - query create/delete/rename and richer connection lifecycle are now implemented
+   - generic standalone external-connection creation remains intentionally out of scope
+   - deeper external-connection authoring remains future work
 
 5. Richer formatting and presentation controls
    - add borders, merged-cell handling, style helpers, or higher-level report-polish workflows on top of the new compact baseline
@@ -61,8 +65,8 @@ The bridge currently supports:
    - explore whether calculation/reporting workflows should remain worksheet-centric or expand into broader workbook patching helpers
 
 7. Named-structure and dependency workflows
-   - deepen name, table, query, and connection dependency inspection
-   - support more coordinated workbook troubleshooting against stable structures rather than raw coordinates
+   - graph-first dependency inspection across names, tables, queries, and connections is now implemented
+   - deeper lineage beyond workbook metadata remains future work
 
 8. Structured import and export workflows
    - export ranges, tables, or query outputs to CSV or JSON

@@ -18,6 +18,19 @@ public interface IWorkbookHandle : IAsyncDisposable
     Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default);
 
     Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default);
+    Task<QueryDetail> GetQueryDetailAsync(string queryName, CancellationToken cancellationToken = default);
+    Task CreateQueryAsync(QueryCreateRequest request, CancellationToken cancellationToken = default);
+    Task RenameQueryAsync(QueryRenameRequest request, CancellationToken cancellationToken = default);
+    Task DeleteQueryAsync(string queryName, CancellationToken cancellationToken = default);
+    Task<ConnectionDetail> GetConnectionAsync(string connectionName, CancellationToken cancellationToken = default);
+    Task RenameConnectionAsync(ConnectionRenameRequest request, CancellationToken cancellationToken = default);
+    Task UpdateConnectionAsync(ConnectionUpdateRequest request, CancellationToken cancellationToken = default);
+    Task DeleteConnectionAsync(string connectionName, CancellationToken cancellationToken = default);
+    Task<WorkbookDependencyGraph> GetDependencyGraphAsync(CancellationToken cancellationToken = default);
+    Task<WorkbookStructureState> GetWorkbookStructureStateAsync(CancellationToken cancellationToken = default);
+    Task<WorkbookProtectionState> GetWorkbookProtectionStateAsync(CancellationToken cancellationToken = default);
+    Task SetWorkbookVisibilityAsync(WorkbookVisibilityRequest request, CancellationToken cancellationToken = default);
+    Task SetWorkbookProtectionAsync(WorkbookProtectionUpdateRequest request, CancellationToken cancellationToken = default);
     Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default);
     Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default);
     Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default);

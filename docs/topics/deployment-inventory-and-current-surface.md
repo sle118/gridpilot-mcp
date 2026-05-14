@@ -20,7 +20,9 @@ Current responsibilities:
 
 - parse host launch options
 - create the runtime logger
+- apply host-owned persistent diagnostics overrides between CLI args and environment defaults
 - create the workbook service resolver
+- expose MCP-first runtime/session diagnosis and guidance-aware tool responses
 - run the stdio MCP server against standard input and standard output
 - write configuration/startup failures to stderr
 
@@ -76,6 +78,7 @@ Current responsibilities:
 - run MCP smoke tests that validate initialize/tools-list protocol behavior
 - discover installed GridPilot instances, resolve stable install paths, and bootstrap default per-user launch profiles
 - plan and execute per-user or machine-wide setup operations, including startup registration and uninstall cleanup
+- support reusable agent-config and log/report primitives that host/runtime diagnostics can compose without adding tray-owned logic
 
 Current non-responsibilities:
 
@@ -177,6 +180,13 @@ Environment variables are read before command-line arguments, and command-line a
 | `GRIDPILOT_LOG_LEVEL` | runtime log level | `off` |
 | `GRIDPILOT_LOG_PATH` | runtime log file path | null |
 
+The effective precedence is now:
+
+1. command-line arguments
+2. GridPilot-owned persistent diagnostics override
+3. environment variables
+4. built-in defaults
+
 When the effective log level is not `off` and no log path is supplied, the host defaults to:
 
 ```text
@@ -247,11 +257,17 @@ session_connect_workbook
 session_create_workbook
 session_list_connections
 session_get_connection
+session_get_diagnostics
 session_disconnect_workbook
 workbook_save
 workbook_save_as
 workbook_list_inventory
 workbook_list_names
+workbook_get_dependency_graph
+workbook_get_structure_state
+workbook_set_visibility
+workbook_get_protection
+workbook_set_protection
 worksheet_create
 worksheet_rename
 worksheet_delete
@@ -259,6 +275,10 @@ worksheet_move
 worksheet_copy
 worksheet_set_visibility
 query_get
+query_get_detail
+query_create
+query_rename
+query_delete
 name_get
 name_read
 name_create
@@ -276,6 +296,10 @@ table_append_rows
 table_replace_rows
 table_delete
 table_set_options
+connection_get
+connection_rename
+connection_update
+connection_delete
 range_read
 range_write
 range_get_format
@@ -286,6 +310,11 @@ range_set_formulas
 range_clear
 calculation_recalculate
 calculation_inspect_errors
+diagnostics_get_runtime
+diagnostics_list_logs
+diagnostics_read_log_tail
+diagnostics_build_report
+diagnostics_set_log_level
 session_grant_mutation_permission
 session_revoke_mutation_permission
 session_get_mutation_permission
@@ -294,6 +323,49 @@ attached_session_revoke_mutation
 ```
 
 Smoke tests should not require every tool schema to be deeply validated in DEPLOY-007, but they should verify that `tools/list` returns a valid tool list and that expected GridPilot tool names are present.
+
+## Guidance-First MCP Response Surface
+
+The host now enriches many workbook-targeted success results with a guidance block so agents can continue after longer reasoning or planning turns without losing workbook context.
+
+Current guidance fields:
+
+- `guidance.targetContext`
+  - `connectionId`
+  - `workbookPath`
+  - `workbookName`
+  - target-resolution mode when available
+- `guidance.recommendedNextTools`
+- `guidance.workflowHints`
+
+The host also adds remediation hints to many target-resolution and attached-session failures:
+
+- `hintCode`
+- `message`
+- `recommendedTool`
+- `suggestedArguments`
+
+This guidance is additive. It does not introduce hidden current-workbook state.
+
+## MCP-First Runtime Diagnosis Surface
+
+The host now exposes runtime/session diagnosis directly through MCP so agents can inspect state before giving up on attach failures or opaque COM errors.
+
+Current diagnosis tools:
+
+- `session_get_diagnostics`
+- `diagnostics_get_runtime`
+- `diagnostics_list_logs`
+- `diagnostics_read_log_tail`
+- `diagnostics_build_report`
+- `diagnostics_set_log_level`
+
+Current diagnosis behavior:
+
+- session diagnostics remain narrow and workbook-session specific
+- runtime diagnostics expose effective log level/path, current schema profile, tracked workbook connections summary, and persistent-override state
+- log tails remain bounded and file-backed
+- persistent future-launch log-level control is stored under GridPilot-owned per-user diagnostics state rather than in client config files
 
 ## Known Client Registration Examples
 

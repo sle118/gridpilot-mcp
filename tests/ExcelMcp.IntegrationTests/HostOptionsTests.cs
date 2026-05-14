@@ -1,4 +1,5 @@
 using ExcelMcp.ToolHost;
+using ExcelMcp.ToolHost.Diagnostics;
 using ExcelMcp.Core;
 using ExcelMcp.Core.Logging;
 
@@ -73,6 +74,41 @@ public sealed class HostOptionsTests
         Assert.Contains("Unsupported log level", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Parse_AppliesPersistentOverrideBetweenArgsAndEnvironment()
+    {
+        using var _ = new EnvironmentVariableScope(
+            "GRIDPILOT_LOG_LEVEL", "info",
+            "GRIDPILOT_LOG_PATH", @"C:\temp\env.log");
+        using var temp = new TempOverrideStore();
+        temp.Store.WriteLogLevelOverride(GridPilotLogLevel.Trace);
+
+        var options = HostOptions.Parse(Array.Empty<string>(), temp.Store);
+
+        Assert.Equal(GridPilotLogLevel.Trace, options.LogLevel);
+        Assert.Equal(GridPilotLogLevel.Info, options.BaseLogLevel);
+        Assert.Equal(GridPilotLogLevel.Trace, options.PersistentLogLevelOverride);
+        Assert.True(options.PersistentLogLevelOverrideApplied);
+        Assert.Equal(temp.Store.SettingsPath, options.RuntimeDiagnosticsSettingsPath);
+    }
+
+    [Fact]
+    public void Parse_KeepsArgsAheadOfPersistentOverride()
+    {
+        using var _ = new EnvironmentVariableScope(
+            "GRIDPILOT_LOG_LEVEL", "info",
+            "GRIDPILOT_LOG_PATH", @"C:\temp\env.log");
+        using var temp = new TempOverrideStore();
+        temp.Store.WriteLogLevelOverride(GridPilotLogLevel.Trace);
+
+        var options = HostOptions.Parse(["--log-level", "debug"], temp.Store);
+
+        Assert.Equal(GridPilotLogLevel.Debug, options.LogLevel);
+        Assert.Equal(GridPilotLogLevel.Debug, options.BaseLogLevel);
+        Assert.Equal(GridPilotLogLevel.Trace, options.PersistentLogLevelOverride);
+        Assert.False(options.PersistentLogLevelOverrideApplied);
+    }
+
     private sealed class EnvironmentVariableScope : IDisposable
     {
         private readonly (string Name, string? Value)[] _originals;
@@ -94,6 +130,27 @@ public sealed class HostOptionsTests
             foreach (var (name, value) in _originals)
             {
                 Environment.SetEnvironmentVariable(name, value);
+            }
+        }
+    }
+
+    private sealed class TempOverrideStore : IDisposable
+    {
+        private readonly string _directory;
+
+        public TempOverrideStore()
+        {
+            _directory = Path.Combine(Path.GetTempPath(), "gridpilot-host-options-tests", Guid.NewGuid().ToString("N"));
+            Store = new RuntimeDiagnosticsOverrideStore(Path.Combine(_directory, "runtime-settings.json"));
+        }
+
+        public RuntimeDiagnosticsOverrideStore Store { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_directory))
+            {
+                Directory.Delete(_directory, recursive: true);
             }
         }
     }

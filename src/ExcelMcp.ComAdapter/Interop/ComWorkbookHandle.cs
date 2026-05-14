@@ -4,6 +4,7 @@ using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
 using System.Collections;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 
@@ -83,16 +84,18 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
             return Task.CompletedTask;
         }
 
+        var workbookIdentity = TryReadWorkbookIdentity();
         try
         {
             ComDispatch.InvokeMethod(_workbook, "Close", saveChanges);
             _closed = true;
-            _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_closed", new Dictionary<string, object?>
-            {
-                ["workbookName"] = Name,
-                ["workbookPath"] = FullPath,
-                ["saveChanges"] = saveChanges
-            });
+            _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_closed", BuildWorkbookCloseFields(workbookIdentity, saveChanges));
+            return Task.CompletedTask;
+        }
+        catch (COMException ex) when (IsDisconnected(ex))
+        {
+            _closed = true;
+            _logger.LogDebug(nameof(ComWorkbookHandle), "workbook_close_disconnected", BuildWorkbookCloseFields(workbookIdentity, saveChanges));
             return Task.CompletedTask;
         }
         finally
@@ -257,6 +260,332 @@ internal sealed class ComWorkbookHandle : IWorkbookHandle
         finally
         {
             ComDispatch.ReleaseIfComObject(query);
+        }
+    }
+
+    public Task<QueryDetail> GetQueryDetailAsync(string queryName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var query = FindQueryByName(queryName)
+            ?? throw new InvalidOperationException($"Query '{queryName}' was not found.");
+
+        try
+        {
+            var name = GetStringProperty(query, "Name");
+            var formula = GetOptionalProperty(query, "Formula")?.ToString() ?? string.Empty;
+            var description = GetOptionalProperty(query, "Description")?.ToString();
+            var connectionName = TryGetConnectionNameForQuery(name);
+            var destination = TryGetWorksheetLoadTarget(name);
+            var loadToWorksheet = destination is not null;
+            var loadToDataModel = connectionName is not null && IsDataModelConnectionType(GetConnectionTypeByName(connectionName) ?? string.Empty);
+            return Task.FromResult(new QueryDetail(
+                name,
+                formula,
+                description,
+                GetQueryLoadMode(loadToWorksheet, loadToDataModel),
+                destination?.SheetName,
+                destination?.Address,
+                connectionName,
+                BuildDependencyNodeId(WorkbookDependencyNodeKinds.Query, name)));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(query);
+        }
+    }
+
+    public Task CreateQueryAsync(QueryCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var existingQuery = FindQueryByName(request.QueryName);
+        if (existingQuery is not null)
+        {
+            ComDispatch.ReleaseIfComObject(existingQuery);
+            throw new InvalidOperationException($"Query '{request.QueryName}' already exists.");
+        }
+
+        object? queries = null;
+        object? query = null;
+        try
+        {
+            queries = GetCollection(_workbook, "Queries");
+            query = CreateWorkbookQuery(queries, request.QueryName, request.Formula);
+
+            if (LoadModeRequiresDataModel(request.LoadMode))
+            {
+                TrySetProperty(query, "LoadToDataModel", true);
+            }
+
+            if (LoadModeRequiresWorksheet(request.LoadMode))
+            {
+                LoadQueryToWorksheet(request.QueryName, request.DestinationSheetName!, request.DestinationAddress!);
+                TrySetProperty(query, "LoadToWorksheet", true);
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(query);
+            ComDispatch.ReleaseIfComObject(queries);
+        }
+    }
+
+    public Task RenameQueryAsync(QueryRenameRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var query = FindQueryByName(request.QueryName)
+            ?? throw new InvalidOperationException($"Query '{request.QueryName}' was not found.");
+
+        try
+        {
+            var existingTarget = FindQueryByName(request.NewQueryName);
+            if (existingTarget is not null)
+            {
+                ComDispatch.ReleaseIfComObject(existingTarget);
+                throw new InvalidOperationException($"Query '{request.NewQueryName}' already exists.");
+            }
+
+            ComDispatch.SetProperty(query, "Name", request.NewQueryName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(query);
+        }
+    }
+
+    public Task DeleteQueryAsync(string queryName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var query = FindQueryByName(queryName)
+            ?? throw new InvalidOperationException($"Query '{queryName}' was not found.");
+
+        try
+        {
+            ComDispatch.InvokeMethod(query, "Delete");
+            CleanupOrphanedQueryConnection(queryName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(query);
+        }
+    }
+
+    public Task<ConnectionDetail> GetConnectionAsync(string connectionName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var connection = FindConnectionByName(connectionName)
+            ?? throw new InvalidOperationException($"Connection '{connectionName}' was not found.");
+
+        try
+        {
+            return Task.FromResult(BuildConnectionDetail(connection));
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    public Task RenameConnectionAsync(ConnectionRenameRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var connection = FindConnectionByName(request.ConnectionName)
+            ?? throw new InvalidOperationException($"Connection '{request.ConnectionName}' was not found.");
+
+        try
+        {
+            var existingTarget = FindConnectionByName(request.NewConnectionName);
+            if (existingTarget is not null)
+            {
+                ComDispatch.ReleaseIfComObject(existingTarget);
+                throw new InvalidOperationException($"Connection '{request.NewConnectionName}' already exists.");
+            }
+
+            ComDispatch.SetProperty(connection, "Name", request.NewConnectionName);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    public Task UpdateConnectionAsync(ConnectionUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var connection = FindConnectionByName(request.ConnectionName)
+            ?? throw new InvalidOperationException($"Connection '{request.ConnectionName}' was not found.");
+
+        try
+        {
+            if (request.RefreshWithRefreshAll is bool refreshWithRefreshAll)
+            {
+                TrySetProperty(connection, "RefreshWithRefreshAll", refreshWithRefreshAll);
+            }
+
+            UpdateConnectionProperty(connection, "BackgroundQuery", request.BackgroundQuery);
+            UpdateConnectionProperty(connection, "EnableRefresh", request.EnableRefresh);
+            UpdateConnectionProperty(connection, "RefreshOnFileOpen", request.RefreshOnFileOpen);
+            UpdateConnectionProperty(connection, "SavePassword", request.SavePassword);
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    public Task DeleteConnectionAsync(string connectionName, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var connection = FindConnectionByName(connectionName)
+            ?? throw new InvalidOperationException($"Connection '{connectionName}' was not found.");
+
+        try
+        {
+            ComDispatch.InvokeMethod(connection, "Delete");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    public Task<WorkbookDependencyGraph> GetDependencyGraphAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var nodes = new Dictionary<string, WorkbookDependencyNode>(StringComparer.OrdinalIgnoreCase);
+        var edges = new List<WorkbookDependencyEdge>();
+        var queryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connectionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nameSummaries = ListNamesAsync(cancellationToken).GetAwaiter().GetResult();
+
+        foreach (var query in ListQueriesAsync(cancellationToken).GetAwaiter().GetResult())
+        {
+            var queryNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Query, query.Name);
+            nodes[queryNodeId] = new WorkbookDependencyNode(queryNodeId, WorkbookDependencyNodeKinds.Query, query.Name);
+            queryNames.Add(query.Name);
+
+            var connectionName = TryGetConnectionNameForQuery(query.Name);
+            if (!string.IsNullOrWhiteSpace(connectionName))
+            {
+                var connectionNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Connection, connectionName);
+                nodes[connectionNodeId] = new WorkbookDependencyNode(connectionNodeId, WorkbookDependencyNodeKinds.Connection, connectionName);
+                connectionNames.Add(connectionName);
+                edges.Add(new WorkbookDependencyEdge(queryNodeId, connectionNodeId, WorkbookDependencyEdgeKinds.QueryUsesConnection));
+            }
+        }
+
+        foreach (var connection in ListConnectionsAsync(cancellationToken).GetAwaiter().GetResult())
+        {
+            var connectionNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Connection, connection.Name);
+            nodes[connectionNodeId] = new WorkbookDependencyNode(connectionNodeId, WorkbookDependencyNodeKinds.Connection, connection.Name);
+            connectionNames.Add(connection.Name);
+        }
+
+        foreach (var table in EnumerateTables())
+        {
+            var tableNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Table, table.TableName);
+            nodes[tableNodeId] = new WorkbookDependencyNode(tableNodeId, WorkbookDependencyNodeKinds.Table, table.TableName);
+            tableNames.Add(table.TableName);
+
+            if (!string.IsNullOrWhiteSpace(table.QueryName))
+            {
+                var queryNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Query, table.QueryName!);
+                nodes[queryNodeId] = new WorkbookDependencyNode(queryNodeId, WorkbookDependencyNodeKinds.Query, table.QueryName!);
+                edges.Add(new WorkbookDependencyEdge(queryNodeId, tableNodeId, WorkbookDependencyEdgeKinds.QueryLoadsToTable));
+                edges.Add(new WorkbookDependencyEdge(tableNodeId, queryNodeId, WorkbookDependencyEdgeKinds.TableBackedByQuery));
+            }
+
+            var connectionName = TryGetConnectionNameForTable(table.TableName);
+            if (!string.IsNullOrWhiteSpace(connectionName))
+            {
+                var connectionNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Connection, connectionName);
+                nodes[connectionNodeId] = new WorkbookDependencyNode(connectionNodeId, WorkbookDependencyNodeKinds.Connection, connectionName);
+                edges.Add(new WorkbookDependencyEdge(tableNodeId, connectionNodeId, WorkbookDependencyEdgeKinds.TableUsesConnection));
+            }
+        }
+
+        foreach (var name in nameSummaries)
+        {
+            var nameNodeId = BuildDependencyNodeId(WorkbookDependencyNodeKinds.Name, name.Name);
+            nodes[nameNodeId] = new WorkbookDependencyNode(nameNodeId, WorkbookDependencyNodeKinds.Name, name.Name);
+
+            var referencedTable = TryResolveReferencedTableName(name.RefersTo, tableNames);
+            if (referencedTable is not null)
+            {
+                edges.Add(new WorkbookDependencyEdge(nameNodeId, BuildDependencyNodeId(WorkbookDependencyNodeKinds.Table, referencedTable), WorkbookDependencyEdgeKinds.NameRefersToTable));
+            }
+
+            var referencedName = TryResolveReferencedName(name.RefersTo, queryNames, connectionNames, tableNames, nameSummaries.Select(entry => entry.Name));
+            if (referencedName is not null)
+            {
+                edges.Add(new WorkbookDependencyEdge(nameNodeId, BuildDependencyNodeId(WorkbookDependencyNodeKinds.Name, referencedName), WorkbookDependencyEdgeKinds.NameRefersToName));
+            }
+        }
+
+        return Task.FromResult(new WorkbookDependencyGraph(nodes.Values.ToArray(), edges.Distinct().ToArray()));
+    }
+
+    public Task<WorkbookStructureState> GetWorkbookStructureStateAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var protection = GetWorkbookProtectionStateAsync(cancellationToken).GetAwaiter().GetResult();
+        var visibility = IsWorkbookWindowVisible() ? WorkbookVisibilityModes.Visible : WorkbookVisibilityModes.Hidden;
+        return Task.FromResult(new WorkbookStructureState(visibility, protection));
+    }
+
+    public Task<WorkbookProtectionState> GetWorkbookProtectionStateAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var protectStructure = ToBoolean(GetOptionalProperty(_workbook, "ProtectStructure"));
+        var protectWindows = ToBoolean(GetOptionalProperty(_workbook, "ProtectWindows"));
+        return Task.FromResult(new WorkbookProtectionState(protectStructure || protectWindows, protectStructure, protectWindows));
+    }
+
+    public Task SetWorkbookVisibilityAsync(WorkbookVisibilityRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SetWorkbookWindowVisible(string.Equals(request.Visibility, WorkbookVisibilityModes.Visible, StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
+    public Task SetWorkbookProtectionAsync(WorkbookProtectionUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.Equals(request.Mode, WorkbookProtectionModes.Protect, StringComparison.Ordinal))
+        {
+            ComDispatch.InvokeMethod(_workbook, "Protect", request.Password ?? string.Empty, request.ProtectStructure ?? true, request.ProtectWindows ?? false);
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            ComDispatch.InvokeMethod(_workbook, "Unprotect", request.Password ?? string.Empty);
+            return Task.CompletedTask;
+        }
+        catch (Exception ex) when (string.IsNullOrWhiteSpace(request.Password))
+        {
+            throw new InvalidOperationException("Workbook protection password is required.", ex);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Workbook protection password was rejected.", ex);
         }
     }
 
@@ -1568,7 +1897,43 @@ in
         }
     }
 
-    private RangeData ReadListObjectRange(object listObject, string fallbackSheetName)
+    private object LoadQueryToWorksheet(string sheetName, string address, string queryName)
+    {
+        var worksheet = GetWorksheet(sheetName);
+        object? listObjects = null;
+        object? destination = null;
+        try
+        {
+            listObjects = ComDispatch.GetProperty<object>(worksheet, "ListObjects");
+            destination = ComDispatch.GetProperty<object>(worksheet, "Range", address);
+            var connectionString = BuildMashupConnectionString(queryName);
+            var listObject = ComDispatch.InvokeMethod(listObjects, "Add", 0, connectionString, true, 1, destination)
+                ?? throw new InvalidOperationException($"Excel did not create a worksheet load target for '{queryName}'.");
+
+            object? queryTable = null;
+            try
+            {
+                queryTable = ComDispatch.GetProperty<object>(listObject, "QueryTable");
+                ComDispatch.SetProperty(queryTable, "CommandType", 2);
+                ComDispatch.SetProperty(queryTable, "CommandText", new[] { $"SELECT * FROM [{queryName}]" });
+                ComDispatch.InvokeMethod(queryTable, "Refresh", false);
+            }
+            finally
+            {
+                ComDispatch.ReleaseIfComObject(queryTable);
+            }
+
+            return listObject;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(destination);
+            ComDispatch.ReleaseIfComObject(listObjects);
+            ComDispatch.ReleaseIfComObject(worksheet);
+        }
+    }
+
+    private RangeReadResult ReadListObjectRange(object listObject, string fallbackSheetName)
     {
         object? range = null;
         object? worksheet = null;
@@ -1577,10 +1942,10 @@ in
             range = ComDispatch.GetProperty<object>(listObject, "Range");
             worksheet = ComDispatch.GetProperty<object>(range, "Worksheet");
             var values = ComDispatch.GetProperty<object?>(range, "Value2");
-            return new RangeData(
+            return new RangeReadResult(
                 SheetName: GetOptionalProperty(worksheet, "Name")?.ToString() ?? fallbackSheetName,
                 Address: GetOptionalProperty(range, "Address")?.ToString() ?? "$A$1",
-                Values: ConvertToMatrix(values));
+                Values: ConvertValues(ConvertToMatrix(values)));
         }
         finally
         {
@@ -2546,6 +2911,398 @@ in
             : connectionName;
     }
 
+    private object CreateWorkbookQuery(object queries, string queryName, string formula)
+    {
+        if (ComDispatch.TryInvokeMethod(queries, "Add", out var query, queryName, formula) && query is not null)
+        {
+            return query;
+        }
+
+        if (ComDispatch.TryInvokeMethod(queries, "Add", out query, queryName, formula, Type.Missing) && query is not null)
+        {
+            return query;
+        }
+
+        throw new InvalidOperationException($"Excel did not create query '{queryName}'.");
+    }
+
+    private static bool LoadModeRequiresWorksheet(string loadMode) =>
+        string.Equals(loadMode, QueryLoadModes.Worksheet, StringComparison.Ordinal) ||
+        string.Equals(loadMode, QueryLoadModes.WorksheetAndDataModel, StringComparison.Ordinal);
+
+    private static bool LoadModeRequiresDataModel(string loadMode) =>
+        string.Equals(loadMode, QueryLoadModes.DataModel, StringComparison.Ordinal) ||
+        string.Equals(loadMode, QueryLoadModes.WorksheetAndDataModel, StringComparison.Ordinal);
+
+    private static string GetQueryLoadMode(bool loadToWorksheet, bool loadToDataModel)
+    {
+        if (loadToWorksheet && loadToDataModel)
+        {
+            return QueryLoadModes.WorksheetAndDataModel;
+        }
+
+        if (loadToWorksheet)
+        {
+            return QueryLoadModes.Worksheet;
+        }
+
+        if (loadToDataModel)
+        {
+            return QueryLoadModes.DataModel;
+        }
+
+        return QueryLoadModes.None;
+    }
+
+    private static string BuildDependencyNodeId(string kind, string name) =>
+        $"{kind}:{name}";
+
+    private string? TryGetConnectionNameForQuery(string queryName)
+    {
+        object? connection = null;
+        try
+        {
+            connection = FindConnectionByQueryName(queryName);
+            return connection is null ? null : GetStringProperty(connection, "Name");
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    private (string SheetName, string Address)? TryGetWorksheetLoadTarget(string queryName)
+    {
+        object? queryTable = null;
+        object? resultRange = null;
+        object? worksheet = null;
+        try
+        {
+            queryTable = FindQueryTableByQueryName(queryName);
+            if (queryTable is null)
+            {
+                return null;
+            }
+
+            resultRange = GetOptionalProperty(queryTable, "ResultRange");
+            if (resultRange is null)
+            {
+                return null;
+            }
+
+            worksheet = ComDispatch.GetProperty<object>(resultRange, "Worksheet");
+            return (
+                GetOptionalProperty(worksheet, "Name")?.ToString() ?? string.Empty,
+                GetOptionalProperty(resultRange, "Address")?.ToString() ?? string.Empty);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(worksheet);
+            ComDispatch.ReleaseIfComObject(resultRange);
+            ComDispatch.ReleaseIfComObject(queryTable);
+        }
+    }
+
+    private string? GetConnectionTypeByName(string connectionName)
+    {
+        object? connection = null;
+        try
+        {
+            connection = FindConnectionByName(connectionName);
+            return connection is null ? null : GetOptionalProperty(connection, "Type")?.ToString();
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    private object? FindConnectionByName(string connectionName)
+    {
+        var connections = GetCollection(_workbook, "Connections");
+        try
+        {
+            foreach (var connection in ComDispatch.Enumerate(connections))
+            {
+                if (string.Equals(GetStringProperty(connection, "Name"), connectionName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return connection;
+                }
+
+                ComDispatch.ReleaseIfComObject(connection);
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connections);
+        }
+
+        return null;
+    }
+
+    private ConnectionDetail BuildConnectionDetail(object connection)
+    {
+        var name = GetStringProperty(connection, "Name");
+        var type = GetOptionalProperty(connection, "Type")?.ToString() ?? "Unknown";
+        return new ConnectionDetail(
+            name,
+            type,
+            ToBoolean(GetOptionalProperty(connection, "RefreshWithRefreshAll")),
+            GetConnectionBooleanProperty(connection, "BackgroundQuery"),
+            GetConnectionBooleanProperty(connection, "EnableRefresh"),
+            GetConnectionBooleanProperty(connection, "RefreshOnFileOpen"),
+            GetConnectionBooleanProperty(connection, "SavePassword"),
+            NormalizeQueryName(name),
+            GetConnectionLoadTargets(name),
+            BuildDependencyNodeId(WorkbookDependencyNodeKinds.Connection, name));
+    }
+
+    private IReadOnlyList<string> GetConnectionLoadTargets(string connectionName)
+    {
+        var targets = new List<string>();
+        foreach (var table in EnumerateTables())
+        {
+            var tableConnectionName = TryGetConnectionNameForTable(table.TableName);
+            if (string.Equals(tableConnectionName, connectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                targets.Add($"{table.SheetName}!{table.Address}");
+            }
+        }
+
+        return targets;
+    }
+
+    private string? TryGetConnectionNameForTable(string tableName)
+    {
+        object? table = null;
+        object? queryTable = null;
+        object? connection = null;
+        try
+        {
+            table = FindTableByName(tableName);
+            if (table is null)
+            {
+                return null;
+            }
+
+            queryTable = ComDispatch.GetProperty<object>(table, "QueryTable");
+            if (queryTable is null)
+            {
+                return null;
+            }
+
+            connection = ComDispatch.GetProperty<object>(queryTable, "WorkbookConnection");
+            return connection is null ? null : GetStringProperty(connection, "Name");
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(connection);
+            ComDispatch.ReleaseIfComObject(queryTable);
+            ComDispatch.ReleaseIfComObject(table);
+        }
+    }
+
+    private void UpdateConnectionProperty(object connection, string propertyName, bool? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        if (TrySetProperty(connection, propertyName, value.Value))
+        {
+            return;
+        }
+
+        object? oleDbConnection = null;
+        object? odbcConnection = null;
+        try
+        {
+            oleDbConnection = GetOptionalProperty(connection, "OLEDBConnection");
+            if (oleDbConnection is not null && TrySetProperty(oleDbConnection, propertyName, value.Value))
+            {
+                return;
+            }
+
+            odbcConnection = GetOptionalProperty(connection, "ODBCConnection");
+            _ = odbcConnection is not null && TrySetProperty(odbcConnection, propertyName, value.Value);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(odbcConnection);
+            ComDispatch.ReleaseIfComObject(oleDbConnection);
+        }
+    }
+
+    private bool? GetConnectionBooleanProperty(object connection, string propertyName)
+    {
+        if (TryGetBooleanProperty(connection, propertyName) is bool value)
+        {
+            return value;
+        }
+
+        object? oleDbConnection = null;
+        object? odbcConnection = null;
+        try
+        {
+            oleDbConnection = GetOptionalProperty(connection, "OLEDBConnection");
+            if (oleDbConnection is not null && TryGetBooleanProperty(oleDbConnection, propertyName) is bool oleDbValue)
+            {
+                return oleDbValue;
+            }
+
+            odbcConnection = GetOptionalProperty(connection, "ODBCConnection");
+            if (odbcConnection is not null && TryGetBooleanProperty(odbcConnection, propertyName) is bool odbcValue)
+            {
+                return odbcValue;
+            }
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(odbcConnection);
+            ComDispatch.ReleaseIfComObject(oleDbConnection);
+        }
+
+        return null;
+    }
+
+    private static bool? TryGetBooleanProperty(object target, string propertyName)
+    {
+        try
+        {
+            return ComDispatch.TryGetProperty(target, propertyName, out var value)
+                ? ToBoolean(value)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TrySetProperty(object target, string propertyName, object value)
+    {
+        try
+        {
+            ComDispatch.SetProperty(target, propertyName, value);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void CleanupOrphanedQueryConnection(string queryName)
+    {
+        object? connection = null;
+        object? lingeringQuery = null;
+        try
+        {
+            connection = FindConnectionByName($"Query - {queryName}");
+            if (connection is null)
+            {
+                return;
+            }
+
+            lingeringQuery = FindQueryByName(queryName);
+            if (lingeringQuery is not null)
+            {
+                return;
+            }
+
+            ComDispatch.InvokeMethod(connection, "Delete");
+        }
+        catch
+        {
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(lingeringQuery);
+            ComDispatch.ReleaseIfComObject(connection);
+        }
+    }
+
+    private bool IsWorkbookWindowVisible()
+    {
+        object? windows = null;
+        object? window = null;
+        try
+        {
+            windows = GetCollection(_workbook, "Windows");
+            window = ComDispatch.GetProperty<object>(windows, "Item", 1);
+            return IsVisible(GetOptionalProperty(window, "Visible"));
+        }
+        catch
+        {
+            return true;
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(window);
+            ComDispatch.ReleaseIfComObject(windows);
+        }
+    }
+
+    private void SetWorkbookWindowVisible(bool visible)
+    {
+        object? windows = null;
+        object? window = null;
+        try
+        {
+            windows = GetCollection(_workbook, "Windows");
+            window = ComDispatch.GetProperty<object>(windows, "Item", 1);
+            ComDispatch.SetProperty(window, "Visible", visible);
+        }
+        finally
+        {
+            ComDispatch.ReleaseIfComObject(window);
+            ComDispatch.ReleaseIfComObject(windows);
+        }
+    }
+
+    private static string? TryResolveReferencedTableName(string refersTo, IEnumerable<string> tableNames)
+    {
+        foreach (var tableName in tableNames)
+        {
+            if (refersTo.Contains(tableName, StringComparison.OrdinalIgnoreCase))
+            {
+                return tableName;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryResolveReferencedName(
+        string refersTo,
+        IEnumerable<string> queryNames,
+        IEnumerable<string> connectionNames,
+        IEnumerable<string> tableNames,
+        IEnumerable<string> nameCandidates)
+    {
+        foreach (var name in nameCandidates)
+        {
+            if (refersTo.Contains(name, StringComparison.OrdinalIgnoreCase) &&
+                !queryNames.Contains(name, StringComparer.OrdinalIgnoreCase) &&
+                !connectionNames.Contains(name, StringComparer.OrdinalIgnoreCase) &&
+                !tableNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                return name;
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsDataModelConnectionType(string connectionType)
     {
         if (int.TryParse(connectionType, out var numericType))
@@ -2783,4 +3540,32 @@ in
 
     private static string BuildDisplayName(string name, string? sheetName) =>
         string.IsNullOrWhiteSpace(sheetName) ? name : $"{sheetName}!{name}";
+
+    private (string? Name, string? FullPath) TryReadWorkbookIdentity() =>
+        (TryReadWorkbookProperty("Name"), TryReadWorkbookProperty("FullName"));
+
+    private string? TryReadWorkbookProperty(string propertyName)
+    {
+        try
+        {
+            return ComDispatch.TryGetProperty(_workbook, propertyName, out var value)
+                ? value?.ToString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Dictionary<string, object?> BuildWorkbookCloseFields((string? Name, string? FullPath) identity, bool saveChanges) =>
+        new()
+        {
+            ["workbookName"] = identity.Name,
+            ["workbookPath"] = identity.FullPath,
+            ["saveChanges"] = saveChanges
+        };
+
+    private static bool IsDisconnected(COMException exception) =>
+        exception.HResult == unchecked((int)0x80010108);
 }

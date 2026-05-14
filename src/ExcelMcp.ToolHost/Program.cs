@@ -1,5 +1,6 @@
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core.Logging;
+using ExcelMcp.ToolHost.Diagnostics;
 using ExcelMcp.ToolHost.Mcp;
 
 namespace ExcelMcp.ToolHost;
@@ -23,6 +24,7 @@ public static class Program
 
         try
         {
+            var settingsStore = new RuntimeDiagnosticsOverrideStore(options.RuntimeDiagnosticsSettingsPath);
             await using var logger = CreateLogger(options);
             logger.LogInfo(nameof(Program), "host_starting", new Dictionary<string, object?>
             {
@@ -34,8 +36,9 @@ public static class Program
             });
 
             await using var workbookServices = await WorkbookServiceResolver.CreateAsync(options, logger);
+            var runtimeDiagnostics = new HostRuntimeDiagnosticsService(options, logger, settingsStore, workbookServices);
             var server = new StdioMcpServer(
-                new McpToolServer(workbookServices, logger),
+                new McpToolServer(workbookServices, runtimeDiagnostics, logger),
                 Console.OpenStandardInput(),
                 Console.OpenStandardOutput(),
                 logger);
@@ -51,6 +54,6 @@ public static class Program
         }
     }
 
-    private static IGridPilotLogger CreateLogger(HostOptions options) =>
-        GridPilotLoggerFactory.Create(options.LogLevel, options.LogPath);
+    private static GridPilotMutableLogger CreateLogger(HostOptions options) =>
+        GridPilotLoggerFactory.Create(options.LogLevel, options.EffectiveLogPath);
 }

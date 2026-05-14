@@ -29,6 +29,413 @@ public sealed class WorkbookService
         return await workbook.GetQueryAsync(queryName, cancellationToken);
     }
 
+    public async Task<QueryDetail> GetQueryDetailAsync(string workbookPath, string queryName, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetQueryDetailAsync(queryName, cancellationToken);
+    }
+
+    public async Task<ConnectionDetail> GetConnectionAsync(string workbookPath, string connectionName, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetConnectionAsync(connectionName, cancellationToken);
+    }
+
+    public async Task<WorkbookDependencyGraph> GetDependencyGraphAsync(string workbookPath, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetDependencyGraphAsync(cancellationToken);
+    }
+
+    public async Task<WorkbookStructureState> GetWorkbookStructureStateAsync(string workbookPath, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetWorkbookStructureStateAsync(cancellationToken);
+    }
+
+    public async Task<WorkbookProtectionState> GetWorkbookProtectionStateAsync(string workbookPath, CancellationToken cancellationToken = default)
+    {
+        await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+        return await workbook.GetWorkbookProtectionStateAsync(cancellationToken);
+    }
+
+    public async Task<QueryMutationResult> CreateQueryAsync(
+        string workbookPath,
+        QueryCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateQueryCreateRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new QueryMutationResult(false, workbookPath, request.QueryName, "create", LoadMode: NormalizeOptional(request.LoadMode), DestinationSheetName: request.DestinationSheetName, DestinationAddress: request.DestinationAddress, Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new QueryMutationResult(false, workbookPath, validatedRequest.QueryName, "create", LoadMode: validatedRequest.LoadMode, DestinationSheetName: validatedRequest.DestinationSheetName, DestinationAddress: validatedRequest.DestinationAddress, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.CreateQueryAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            QueryDetail? detail = null;
+            try
+            {
+                detail = await workbook.GetQueryDetailAsync(validatedRequest.QueryName, cancellationToken);
+            }
+            catch
+            {
+            }
+
+            _logger.LogInfo(nameof(WorkbookService), "query_created", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = validatedRequest.QueryName,
+                ["loadMode"] = validatedRequest.LoadMode
+            });
+            return new QueryMutationResult(
+                true,
+                workbookPath,
+                validatedRequest.QueryName,
+                "create",
+                LoadMode: detail?.LoadMode ?? validatedRequest.LoadMode,
+                DestinationSheetName: detail?.DestinationSheetName ?? validatedRequest.DestinationSheetName,
+                DestinationAddress: detail?.DestinationAddress ?? validatedRequest.DestinationAddress,
+                ConnectionName: detail?.ConnectionName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "query_create_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = validatedRequest.QueryName
+            }, ex);
+            return BuildQueryMutationError(workbookPath, validatedRequest.QueryName, "create", null, validatedRequest.LoadMode, validatedRequest.DestinationSheetName, validatedRequest.DestinationAddress, null, ex);
+        }
+    }
+
+    public async Task<QueryMutationResult> RenameQueryAsync(
+        string workbookPath,
+        QueryRenameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateQueryRenameRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new QueryMutationResult(false, workbookPath, request.QueryName, "rename", request.NewQueryName, Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new QueryMutationResult(false, workbookPath, validatedRequest.QueryName, "rename", validatedRequest.NewQueryName, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            QueryDetail? detail = null;
+            try
+            {
+                detail = await workbook.GetQueryDetailAsync(validatedRequest.QueryName, cancellationToken);
+            }
+            catch
+            {
+            }
+
+            await workbook.RenameQueryAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "query_renamed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = validatedRequest.QueryName,
+                ["newQueryName"] = validatedRequest.NewQueryName
+            });
+            return new QueryMutationResult(
+                true,
+                workbookPath,
+                validatedRequest.QueryName,
+                "rename",
+                validatedRequest.NewQueryName,
+                detail?.LoadMode,
+                detail?.DestinationSheetName,
+                detail?.DestinationAddress,
+                detail?.ConnectionName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "query_rename_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = validatedRequest.QueryName,
+                ["newQueryName"] = validatedRequest.NewQueryName
+            }, ex);
+            return BuildQueryMutationError(workbookPath, validatedRequest.QueryName, "rename", validatedRequest.NewQueryName, null, null, null, null, ex);
+        }
+    }
+
+    public async Task<QueryDeleteResult> DeleteQueryAsync(
+        string workbookPath,
+        string queryName,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedQueryName = NormalizeOptional(queryName);
+        if (normalizedQueryName is null)
+        {
+            return new QueryDeleteResult(false, workbookPath, queryName, Error: new OperationError("query_delete_invalid", "Query delete requires a non-empty query name.", "Provide 'queryName'.", nameof(WorkbookService)));
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new QueryDeleteResult(false, workbookPath, normalizedQueryName, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            string? connectionName = null;
+            try
+            {
+                connectionName = (await workbook.GetQueryDetailAsync(normalizedQueryName, cancellationToken)).ConnectionName;
+            }
+            catch
+            {
+            }
+
+            await workbook.DeleteQueryAsync(normalizedQueryName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "query_deleted", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = normalizedQueryName
+            });
+            return new QueryDeleteResult(true, workbookPath, normalizedQueryName, connectionName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "query_delete_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["queryName"] = normalizedQueryName
+            }, ex);
+            return new QueryDeleteResult(
+                false,
+                workbookPath,
+                normalizedQueryName,
+                Error: new OperationError(
+                    Code: "query_delete_failed",
+                    Message: $"Failed to delete query '{normalizedQueryName}'.",
+                    Detail: ex.Message,
+                    Source: nameof(WorkbookService)));
+        }
+    }
+
+    public async Task<ConnectionMutationResult> RenameConnectionAsync(
+        string workbookPath,
+        ConnectionRenameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateConnectionRenameRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, request.ConnectionName, "rename", request.NewConnectionName, Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, validatedRequest.ConnectionName, "rename", validatedRequest.NewConnectionName, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.RenameConnectionAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "connection_renamed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = validatedRequest.ConnectionName,
+                ["newConnectionName"] = validatedRequest.NewConnectionName
+            });
+            return new ConnectionMutationResult(true, workbookPath, validatedRequest.ConnectionName, "rename", validatedRequest.NewConnectionName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "connection_rename_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = validatedRequest.ConnectionName,
+                ["newConnectionName"] = validatedRequest.NewConnectionName
+            }, ex);
+            return BuildConnectionMutationError(workbookPath, validatedRequest.ConnectionName, "rename", validatedRequest.NewConnectionName, null, ex);
+        }
+    }
+
+    public async Task<ConnectionMutationResult> UpdateConnectionAsync(
+        string workbookPath,
+        ConnectionUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateConnectionUpdateRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, request.ConnectionName, "update", RefreshWithRefreshAll: request.RefreshWithRefreshAll, BackgroundQuery: request.BackgroundQuery, EnableRefresh: request.EnableRefresh, RefreshOnFileOpen: request.RefreshOnFileOpen, SavePassword: request.SavePassword, Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, validatedRequest.ConnectionName, "update", RefreshWithRefreshAll: validatedRequest.RefreshWithRefreshAll, BackgroundQuery: validatedRequest.BackgroundQuery, EnableRefresh: validatedRequest.EnableRefresh, RefreshOnFileOpen: validatedRequest.RefreshOnFileOpen, SavePassword: validatedRequest.SavePassword, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.UpdateConnectionAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "connection_updated", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = validatedRequest.ConnectionName
+            });
+            return new ConnectionMutationResult(true, workbookPath, validatedRequest.ConnectionName, "update", RefreshWithRefreshAll: validatedRequest.RefreshWithRefreshAll, BackgroundQuery: validatedRequest.BackgroundQuery, EnableRefresh: validatedRequest.EnableRefresh, RefreshOnFileOpen: validatedRequest.RefreshOnFileOpen, SavePassword: validatedRequest.SavePassword);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "connection_update_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = validatedRequest.ConnectionName
+            }, ex);
+            return BuildConnectionMutationError(workbookPath, validatedRequest.ConnectionName, "update", null, validatedRequest, ex);
+        }
+    }
+
+    public async Task<ConnectionMutationResult> DeleteConnectionAsync(
+        string workbookPath,
+        string connectionName,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedConnectionName = NormalizeOptional(connectionName);
+        if (normalizedConnectionName is null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, connectionName, "delete", Error: new OperationError("connection_delete_invalid", "Connection delete requires a non-empty connection name.", "Provide 'connectionName'.", nameof(WorkbookService)));
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new ConnectionMutationResult(false, workbookPath, normalizedConnectionName, "delete", Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.DeleteConnectionAsync(normalizedConnectionName, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "connection_deleted", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = normalizedConnectionName
+            });
+            return new ConnectionMutationResult(true, workbookPath, normalizedConnectionName, "delete");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "connection_delete_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["connectionName"] = normalizedConnectionName
+            }, ex);
+            return BuildConnectionMutationError(workbookPath, normalizedConnectionName, "delete", null, null, ex);
+        }
+    }
+
+    public async Task<WorkbookStructureMutationResult> SetWorkbookVisibilityAsync(
+        string workbookPath,
+        WorkbookVisibilityRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateWorkbookVisibilityRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new WorkbookStructureMutationResult(false, workbookPath, "set_visibility", Visibility: NormalizeOptional(request.Visibility), Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorkbookStructureMutationResult(false, workbookPath, "set_visibility", Visibility: validatedRequest.Visibility, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SetWorkbookVisibilityAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "workbook_visibility_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["visibility"] = validatedRequest.Visibility
+            });
+            return new WorkbookStructureMutationResult(true, workbookPath, "set_visibility", Visibility: validatedRequest.Visibility);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "workbook_visibility_set_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["visibility"] = validatedRequest.Visibility
+            }, ex);
+            return BuildWorkbookStructureMutationError(workbookPath, "set_visibility", validatedRequest.Visibility, null, null, null, ex);
+        }
+    }
+
+    public async Task<WorkbookStructureMutationResult> SetWorkbookProtectionAsync(
+        string workbookPath,
+        WorkbookProtectionUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validatedRequest = ValidateWorkbookProtectionUpdateRequest(request, out var validationError);
+        if (validatedRequest is null)
+        {
+            return new WorkbookStructureMutationResult(false, workbookPath, "set_protection", Mode: NormalizeOptional(request.Mode), ProtectStructure: request.ProtectStructure, ProtectWindows: request.ProtectWindows, Error: validationError);
+        }
+
+        var safetyError = await _operationSafety.CheckAsync(workbookPath, WorkbookOperationIntent.Mutating, cancellationToken);
+        if (safetyError is not null)
+        {
+            return new WorkbookStructureMutationResult(false, workbookPath, "set_protection", Mode: validatedRequest.Mode, ProtectStructure: validatedRequest.ProtectStructure, ProtectWindows: validatedRequest.ProtectWindows, Error: safetyError);
+        }
+
+        try
+        {
+            await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
+            await workbook.SetWorkbookProtectionAsync(validatedRequest, cancellationToken);
+            await workbook.SaveAsync(cancellationToken);
+            _logger.LogInfo(nameof(WorkbookService), "workbook_protection_set", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["mode"] = validatedRequest.Mode
+            });
+            return new WorkbookStructureMutationResult(true, workbookPath, "set_protection", Mode: validatedRequest.Mode, ProtectStructure: validatedRequest.ProtectStructure, ProtectWindows: validatedRequest.ProtectWindows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInfo(nameof(WorkbookService), "workbook_protection_set_failed", new Dictionary<string, object?>
+            {
+                ["workbookPath"] = workbookPath,
+                ["mode"] = validatedRequest.Mode
+            }, ex);
+            return BuildWorkbookProtectionError(workbookPath, validatedRequest, ex);
+        }
+    }
+
     public async Task<NameSummary> GetNameAsync(string workbookPath, string name, string? sheetName = null, CancellationToken cancellationToken = default)
     {
         await using var workbook = await _session.OpenWorkbookAsync(workbookPath, cancellationToken);
@@ -1548,6 +1955,155 @@ public sealed class WorkbookService
         return new WorksheetVisibilityRequest(sheetName, visibility);
     }
 
+    private static QueryCreateRequest? ValidateQueryCreateRequest(QueryCreateRequest request, out OperationError? error)
+    {
+        var queryName = NormalizeOptional(request.QueryName);
+        var formula = NormalizeOptional(request.Formula);
+        var loadMode = NormalizeQueryLoadMode(request.LoadMode);
+        var destinationSheetName = NormalizeOptional(request.DestinationSheetName);
+        var destinationAddress = NormalizeOptional(request.DestinationAddress);
+
+        if (queryName is null || formula is null || loadMode is null)
+        {
+            error = new OperationError(
+                Code: "query_create_invalid",
+                Message: "Query create requires a name, formula, and supported load mode.",
+                Detail: "Use load mode 'none', 'worksheet', 'dataModel', or 'worksheetAndDataModel'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (LoadModeRequiresWorksheetTarget(loadMode) &&
+            (destinationSheetName is null || destinationAddress is null))
+        {
+            error = new OperationError(
+                Code: "query_create_invalid",
+                Message: "Worksheet-loaded queries require a destination sheet and address.",
+                Detail: "Provide both 'destinationSheetName' and 'destinationAddress' when loadMode targets a worksheet.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new QueryCreateRequest(queryName, formula, loadMode, destinationSheetName, destinationAddress);
+    }
+
+    private static QueryRenameRequest? ValidateQueryRenameRequest(QueryRenameRequest request, out OperationError? error)
+    {
+        var queryName = NormalizeOptional(request.QueryName);
+        var newQueryName = NormalizeOptional(request.NewQueryName);
+        if (queryName is null || newQueryName is null)
+        {
+            error = new OperationError(
+                Code: "query_rename_invalid",
+                Message: "Query rename requires source and destination query names.",
+                Detail: "Provide both 'queryName' and 'newQueryName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new QueryRenameRequest(queryName, newQueryName);
+    }
+
+    private static ConnectionRenameRequest? ValidateConnectionRenameRequest(ConnectionRenameRequest request, out OperationError? error)
+    {
+        var connectionName = NormalizeOptional(request.ConnectionName);
+        var newConnectionName = NormalizeOptional(request.NewConnectionName);
+        if (connectionName is null || newConnectionName is null)
+        {
+            error = new OperationError(
+                Code: "connection_rename_invalid",
+                Message: "Connection rename requires source and destination connection names.",
+                Detail: "Provide both 'connectionName' and 'newConnectionName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new ConnectionRenameRequest(connectionName, newConnectionName);
+    }
+
+    private static ConnectionUpdateRequest? ValidateConnectionUpdateRequest(ConnectionUpdateRequest request, out OperationError? error)
+    {
+        var connectionName = NormalizeOptional(request.ConnectionName);
+        if (connectionName is null)
+        {
+            error = new OperationError(
+                Code: "connection_update_invalid",
+                Message: "Connection update requires a connection name.",
+                Detail: "Provide 'connectionName'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (request.RefreshWithRefreshAll is null &&
+            request.BackgroundQuery is null &&
+            request.EnableRefresh is null &&
+            request.RefreshOnFileOpen is null &&
+            request.SavePassword is null)
+        {
+            error = new OperationError(
+                Code: "connection_update_invalid",
+                Message: "Connection update requires at least one mutable field.",
+                Detail: "Provide one or more of 'refreshWithRefreshAll', 'backgroundQuery', 'enableRefresh', 'refreshOnFileOpen', or 'savePassword'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return request with { ConnectionName = connectionName };
+    }
+
+    private static WorkbookVisibilityRequest? ValidateWorkbookVisibilityRequest(WorkbookVisibilityRequest request, out OperationError? error)
+    {
+        var visibility = NormalizeWorkbookVisibility(request.Visibility);
+        if (visibility is null)
+        {
+            error = new OperationError(
+                Code: "workbook_set_visibility_invalid",
+                Message: "Workbook visibility change requires a supported visibility value.",
+                Detail: "Use visibility 'visible' or 'hidden'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        error = null;
+        return new WorkbookVisibilityRequest(visibility);
+    }
+
+    private static WorkbookProtectionUpdateRequest? ValidateWorkbookProtectionUpdateRequest(WorkbookProtectionUpdateRequest request, out OperationError? error)
+    {
+        var mode = NormalizeWorkbookProtectionMode(request.Mode);
+        var password = NormalizeOptional(request.Password);
+        if (mode is null)
+        {
+            error = new OperationError(
+                Code: "workbook_set_protection_invalid",
+                Message: "Workbook protection requires a supported mode.",
+                Detail: "Use mode 'protect' or 'unprotect'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        if (mode == WorkbookProtectionModes.Unprotect &&
+            (request.ProtectStructure is not null || request.ProtectWindows is not null))
+        {
+            error = new OperationError(
+                Code: "workbook_set_protection_invalid",
+                Message: "Workbook unprotect does not accept protect flags.",
+                Detail: "Remove 'protectStructure' and 'protectWindows' when mode is 'unprotect'.",
+                Source: nameof(WorkbookService));
+            return null;
+        }
+
+        bool? protectStructure = mode == WorkbookProtectionModes.Protect ? request.ProtectStructure ?? true : null;
+        bool? protectWindows = mode == WorkbookProtectionModes.Protect ? request.ProtectWindows ?? false : null;
+
+        error = null;
+        return new WorkbookProtectionUpdateRequest(mode, password, protectStructure, protectWindows);
+    }
+
     private static string? NormalizeVisibility(string? visibility)
     {
         var normalized = NormalizeOptional(visibility);
@@ -1564,6 +2120,60 @@ public sealed class WorkbookService
             _ => null
         };
     }
+
+    private static string? NormalizeWorkbookVisibility(string? visibility)
+    {
+        var normalized = NormalizeOptional(visibility);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return normalized.ToLowerInvariant() switch
+        {
+            "visible" => WorkbookVisibilityModes.Visible,
+            "hidden" => WorkbookVisibilityModes.Hidden,
+            _ => null
+        };
+    }
+
+    private static string? NormalizeQueryLoadMode(string? loadMode)
+    {
+        var normalized = NormalizeOptional(loadMode);
+        if (normalized is null)
+        {
+            return QueryLoadModes.None;
+        }
+
+        return normalized.ToLowerInvariant() switch
+        {
+            "none" => QueryLoadModes.None,
+            "worksheet" => QueryLoadModes.Worksheet,
+            "datamodel" => QueryLoadModes.DataModel,
+            "worksheetanddatamodel" => QueryLoadModes.WorksheetAndDataModel,
+            _ => null
+        };
+    }
+
+    private static string? NormalizeWorkbookProtectionMode(string? mode)
+    {
+        var normalized = NormalizeOptional(mode);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return normalized.ToLowerInvariant() switch
+        {
+            "protect" => WorkbookProtectionModes.Protect,
+            "unprotect" => WorkbookProtectionModes.Unprotect,
+            _ => null
+        };
+    }
+
+    private static bool LoadModeRequiresWorksheetTarget(string loadMode) =>
+        string.Equals(loadMode, QueryLoadModes.Worksheet, StringComparison.Ordinal) ||
+        string.Equals(loadMode, QueryLoadModes.WorksheetAndDataModel, StringComparison.Ordinal);
 
     private static WorksheetPlacement? ValidatePlacement(
         string? sheetName,
@@ -1791,6 +2401,56 @@ public sealed class WorkbookService
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
 
+    private static QueryMutationResult BuildQueryMutationError(
+        string workbookPath,
+        string queryName,
+        string action,
+        string? newQueryName,
+        string? loadMode,
+        string? destinationSheetName,
+        string? destinationAddress,
+        string? connectionName,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            queryName,
+            action,
+            newQueryName,
+            loadMode,
+            destinationSheetName,
+            destinationAddress,
+            connectionName,
+            new OperationError(
+                Code: $"query_{action}_failed",
+                Message: $"Failed to {action.Replace('_', ' ')} query '{queryName}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static ConnectionMutationResult BuildConnectionMutationError(
+        string workbookPath,
+        string connectionName,
+        string action,
+        string? newConnectionName,
+        ConnectionUpdateRequest? request,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            connectionName,
+            action,
+            newConnectionName,
+            request?.RefreshWithRefreshAll,
+            request?.BackgroundQuery,
+            request?.EnableRefresh,
+            request?.RefreshOnFileOpen,
+            request?.SavePassword,
+            new OperationError(
+                Code: $"connection_{action}_failed",
+                Message: $"Failed to {action.Replace('_', ' ')} connection '{connectionName}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
     private static RecalculationResult BuildRecalculationError(
         string workbookPath,
         string scope,
@@ -1918,6 +2578,69 @@ public sealed class WorkbookService
                 Message: $"Failed to {action.Replace('_', ' ')} for table '{tableName}'.",
                 Detail: ex.Message,
                 Source: nameof(WorkbookService)));
+
+    private static WorkbookStructureMutationResult BuildWorkbookStructureMutationError(
+        string workbookPath,
+        string action,
+        string? visibility,
+        string? mode,
+        bool? protectStructure,
+        bool? protectWindows,
+        Exception ex) =>
+        new(
+            false,
+            workbookPath,
+            action,
+            visibility,
+            mode,
+            protectStructure,
+            protectWindows,
+            new OperationError(
+                Code: $"workbook_{action}_failed",
+                Message: $"Failed to {action.Replace('_', ' ')} for workbook '{workbookPath}'.",
+                Detail: ex.Message,
+                Source: nameof(WorkbookService)));
+
+    private static WorkbookStructureMutationResult BuildWorkbookProtectionError(
+        string workbookPath,
+        WorkbookProtectionUpdateRequest request,
+        Exception ex)
+    {
+        var detail = ex.Message;
+        var lower = detail.ToLowerInvariant();
+        var code = "workbook_set_protection_failed";
+        var message = $"Failed to {request.Mode} workbook protection.";
+
+        if (request.Mode == WorkbookProtectionModes.Unprotect)
+        {
+            if (lower.Contains("password"))
+            {
+                if (string.IsNullOrWhiteSpace(request.Password))
+                {
+                    code = "workbook_protection_password_required";
+                    message = "Workbook protection password is required to unprotect this workbook.";
+                }
+                else
+                {
+                    code = "workbook_protection_invalid_password";
+                    message = "Workbook protection password was rejected.";
+                }
+            }
+        }
+
+        return new WorkbookStructureMutationResult(
+            false,
+            workbookPath,
+            "set_protection",
+            Mode: request.Mode,
+            ProtectStructure: request.ProtectStructure,
+            ProtectWindows: request.ProtectWindows,
+            Error: new OperationError(
+                Code: code,
+                Message: message,
+                Detail: detail,
+                Source: nameof(WorkbookService)));
+    }
 
     private sealed record ScopedTarget(string Scope, string? SheetName, string? Address);
     private sealed record WorksheetPlacement(string SheetName, string? BeforeSheetName, string? AfterSheetName, string? Position);

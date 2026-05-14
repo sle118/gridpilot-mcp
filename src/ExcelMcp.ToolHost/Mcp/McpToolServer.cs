@@ -3,8 +3,11 @@ using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core;
 using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
+using ExcelMcp.Deployment.Logs;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ExcelMcp.ToolHost;
+using ExcelMcp.ToolHost.Diagnostics;
 
 namespace ExcelMcp.ToolHost.Mcp;
 
@@ -24,22 +27,35 @@ public sealed class McpToolServer
     };
 
     private readonly IWorkbookServiceResolver _workbookServices;
+    private readonly HostRuntimeDiagnosticsService? _runtimeDiagnostics;
     private readonly IGridPilotLogger _logger;
     private readonly TimeSpan _toolExecutionTimeout;
     private ToolSchemaProfile _toolSchemaProfile = ToolSchemaProfile.Default;
+    private string? _clientName;
+    private string? _clientVersion;
 
     internal McpToolServer(
         IWorkbookServiceResolver workbookServices,
+        HostRuntimeDiagnosticsService? runtimeDiagnostics = null,
         IGridPilotLogger? logger = null,
         TimeSpan? toolExecutionTimeout = null)
     {
         _workbookServices = workbookServices;
+        _runtimeDiagnostics = runtimeDiagnostics;
         _logger = logger ?? GridPilotNullLogger.Instance;
         _toolExecutionTimeout = toolExecutionTimeout ?? DefaultToolExecutionTimeout;
     }
 
+    internal McpToolServer(
+        IWorkbookServiceResolver workbookServices,
+        IGridPilotLogger? logger,
+        TimeSpan? toolExecutionTimeout = null)
+        : this(workbookServices, null, logger, toolExecutionTimeout)
+    {
+    }
+
     public McpToolServer(WorkbookService workbookService, IGridPilotLogger? logger = null, TimeSpan? toolExecutionTimeout = null)
-        : this(new SharedWorkbookServiceResolver(workbookService), logger, toolExecutionTimeout)
+        : this(new SharedWorkbookServiceResolver(workbookService), null, logger, toolExecutionTimeout)
     {
     }
 
@@ -48,6 +64,8 @@ public sealed class McpToolServer
         var protocolVersion = string.IsNullOrWhiteSpace(requestedProtocolVersion)
             ? "2024-11-05"
             : requestedProtocolVersion;
+        _clientName = clientName;
+        _clientVersion = clientVersion;
         _toolSchemaProfile = ResolveToolSchemaProfile(clientName);
 
         _logger.LogInfo(nameof(McpToolServer), "initialize", new Dictionary<string, object?>
@@ -77,7 +95,7 @@ public sealed class McpToolServer
             ToJsonElement(new { type = "object", properties = new { } })),
         new(
             ToolNames.SessionConnectWorkbook,
-            "Connect a workbook by full path or by open workbook title.",
+            "Connect a workbook by full path or by open workbook title. Reuse the returned connectionId for later workbook calls.",
             ToJsonElement(new
             {
                 type = "object",
@@ -89,7 +107,7 @@ public sealed class McpToolServer
             })),
         new(
             ToolNames.SessionCreateWorkbook,
-            "Create a new workbook at a full path and connect it through a bridge-owned session.",
+            "Create a new workbook at a full path and connect it through a bridge-owned session. Reuse the returned connectionId for later workbook calls.",
             ToJsonElement(new
             {
                 type = "object",
@@ -105,7 +123,7 @@ public sealed class McpToolServer
             ToJsonElement(new { type = "object", properties = new { } })),
         new(
             ToolNames.SessionGetConnection,
-            "Get one connected workbook by connection id.",
+            "Get one connected workbook by connection id and confirm the workbook path to reuse for later calls.",
             ToJsonElement(new
             {
                 type = "object",
@@ -115,6 +133,10 @@ public sealed class McpToolServer
                 },
                 required = new[] { "connectionId" }
             })),
+        new(
+            ToolNames.SessionGetDiagnostics,
+            "Get live Excel session diagnostics for the targeted workbook so agents can inspect readiness, interactivity, calculation state, and attached-session safety signals.",
+            BuildTargetSchema()),
         new(
             ToolNames.SessionDisconnectWorkbook,
             "Disconnect one connected workbook by connection id.",
@@ -126,6 +148,48 @@ public sealed class McpToolServer
                     connectionId = new { type = "string" }
                 },
                 required = new[] { "connectionId" }
+            })),
+        new(
+            ToolNames.DiagnosticsGetRuntime,
+            "Get GridPilot host runtime diagnostics including current client info, schema profile, effective logging, and tracked workbook connections.",
+            ToJsonElement(new { type = "object", properties = new { } })),
+        new(
+            ToolNames.DiagnosticsListLogs,
+            "List relevant GridPilot runtime log candidates for diagnosis and live testing.",
+            ToJsonElement(new { type = "object", properties = new { } })),
+        new(
+            ToolNames.DiagnosticsReadLogTail,
+            "Read a bounded recent tail from a GridPilot runtime log by path or known log kind.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    path = new { type = "string" },
+                    kind = new { type = "string" },
+                    maxLines = new { type = "integer" },
+                    maxBytes = new { type = "integer" }
+                }
+            })),
+        new(
+            ToolNames.DiagnosticsBuildReport,
+            "Build a redacted runtime diagnostic report with optional bounded log tails and optional workbook session diagnostics.",
+            BuildTargetSchema(
+                ("includeRecentLogTails", new { type = "boolean" }),
+                ("maxLines", new { type = "integer" }),
+                ("maxBytes", new { type = "integer" }))),
+        new(
+            ToolNames.DiagnosticsSetLogLevel,
+            "Set or reset GridPilot runtime logging for the current host process, future launches, or both.",
+            ToJsonElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    level = new { type = "string" },
+                    scope = new { type = "string" }
+                },
+                required = new[] { "level" }
             })),
         new(
             ToolNames.WorkbookSave,
@@ -191,9 +255,63 @@ public sealed class McpToolServer
                 ("sheetName", new { type = "string" }),
                 ("visibility", new { type = "string" }))),
         new(
+            ToolNames.WorkbookGetDependencyGraph,
+            "Get a graph-first dependency view across workbook queries, connections, tables, and names.",
+            BuildTargetSchema()),
+        new(
+            ToolNames.WorkbookGetStructureState,
+            "Get workbook visibility and protection state.",
+            BuildTargetSchema()),
+        new(
+            ToolNames.WorkbookSetVisibility,
+            "Set workbook window visibility using visible or hidden states.",
+            BuildTargetSchema(
+                ["visibility"],
+                ("visibility", new { type = "string" }))),
+        new(
+            ToolNames.WorkbookGetProtection,
+            "Get workbook-level protection state.",
+            BuildTargetSchema()),
+        new(
+            ToolNames.WorkbookSetProtection,
+            "Protect or unprotect workbook structure and windows.",
+            BuildTargetSchema(
+                ["mode"],
+                ("mode", new { type = "string" }),
+                ("password", new { type = "string" }),
+                ("protectStructure", new { type = "boolean" }),
+                ("protectWindows", new { type = "boolean" }))),
+        new(
             ToolNames.QueryGet,
             "Get a workbook query definition by name.",
             BuildTargetSchema(["queryName"], ("queryName", new { type = "string" }))),
+        new(
+            ToolNames.QueryGetDetail,
+            "Get a rich workbook query definition by name, including load targets and backing connection when available.",
+            BuildTargetSchema(["queryName"], ("queryName", new { type = "string" }))),
+        new(
+            ToolNames.QueryCreate,
+            "Create a workbook query and optionally load it to a worksheet or the data model.",
+            BuildTargetSchema(
+                ["queryName", "formula"],
+                ("queryName", new { type = "string" }),
+                ("formula", new { type = "string" }),
+                ("loadMode", new { type = "string" }),
+                ("destinationSheetName", new { type = "string" }),
+                ("destinationAddress", new { type = "string" }))),
+        new(
+            ToolNames.QueryRename,
+            "Rename an existing workbook query.",
+            BuildTargetSchema(
+                ["queryName", "newQueryName"],
+                ("queryName", new { type = "string" }),
+                ("newQueryName", new { type = "string" }))),
+        new(
+            ToolNames.QueryDelete,
+            "Delete a workbook query and clean up clearly orphaned query-owned connections when possible.",
+            BuildTargetSchema(
+                ["queryName"],
+                ("queryName", new { type = "string" }))),
         new(
             ToolNames.NameGet,
             "Resolve one workbook or worksheet-scoped Excel name.",
@@ -260,6 +378,36 @@ public sealed class McpToolServer
                 ["queryName", "formula"],
                 ("queryName", new { type = "string" }),
                 ("formula", new { type = "string" }))),
+        new(
+            ToolNames.ConnectionGet,
+            "Get richer workbook connection metadata by connection name.",
+            BuildTargetSchema(
+                ["connectionName"],
+                ("connectionName", new { type = "string" }))),
+        new(
+            ToolNames.ConnectionRename,
+            "Rename an existing workbook data connection.",
+            BuildTargetSchema(
+                ["connectionName", "newConnectionName"],
+                ("connectionName", new { type = "string" }),
+                ("newConnectionName", new { type = "string" }))),
+        new(
+            ToolNames.ConnectionUpdate,
+            "Update workbook data connection refresh behavior and related flags.",
+            BuildTargetSchema(
+                ["connectionName"],
+                ("connectionName", new { type = "string" }),
+                ("refreshWithRefreshAll", new { type = "boolean" }),
+                ("backgroundQuery", new { type = "boolean" }),
+                ("enableRefresh", new { type = "boolean" }),
+                ("refreshOnFileOpen", new { type = "boolean" }),
+                ("savePassword", new { type = "boolean" }))),
+        new(
+            ToolNames.ConnectionDelete,
+            "Delete an existing workbook data connection by exact name.",
+            BuildTargetSchema(
+                ["connectionName"],
+                ("connectionName", new { type = "string" }))),
         new(
             ToolNames.TableGet,
             "Get deeper metadata for one Excel table.",
@@ -559,14 +707,14 @@ public sealed class McpToolServer
 
             object structuredContent = await toolTask.ConfigureAwait(false);
 
-            var structuredJson = ToJsonElement(structuredContent);
+            var structuredJson = EnrichStructuredContent(name, ToJsonElement(structuredContent), normalizedArguments);
             _logger.LogInfo(nameof(McpToolServer), "tool_call_finished", new Dictionary<string, object?>
             {
                 ["toolName"] = name,
                 ["isError"] = IsErrorResult(structuredJson)
             });
             return new McpToolCallResult(
-                Content: new object[] { new { type = "text", text = JsonSerializer.Serialize(structuredContent, JsonOptions) } },
+                Content: new object[] { new { type = "text", text = structuredJson.GetRawText() } },
                 StructuredContent: structuredJson,
                 IsError: IsErrorResult(structuredJson));
         }
@@ -577,7 +725,7 @@ public sealed class McpToolServer
                 ["toolName"] = name,
                 ["code"] = ex.Code
             }, ex);
-            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer)));
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, Source: nameof(McpToolServer), Remediation: BuildRemediationHint(name, ex.Code, arguments)));
         }
         catch (WorkbookTargetResolutionException ex)
         {
@@ -586,7 +734,7 @@ public sealed class McpToolServer
                 ["toolName"] = name,
                 ["code"] = ex.Code
             }, ex);
-            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer), BuildRemediationHint(name, ex.Code, arguments, ex.Message)));
         }
         catch (ExcelSessionTargetException ex)
         {
@@ -595,7 +743,7 @@ public sealed class McpToolServer
                 ["toolName"] = name,
                 ["code"] = ex.Code
             }, ex);
-            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer), BuildRemediationHint(name, ex.Code, arguments, ex.Message)));
         }
         catch (AttachedMutationApprovalModeException ex)
         {
@@ -604,7 +752,7 @@ public sealed class McpToolServer
                 ["toolName"] = name,
                 ["code"] = ex.Code
             }, ex);
-            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer)));
+            return BuildErrorResult(new McpToolError(ex.Code, ex.Message, ex.Detail, nameof(McpToolServer), BuildRemediationHint(name, ex.Code, arguments, ex.Message)));
         }
         catch (Exception ex)
         {
@@ -613,7 +761,7 @@ public sealed class McpToolServer
                 ["toolName"] = name,
                 ["code"] = "tool_call_failed"
             }, ex);
-            return BuildErrorResult(new McpToolError("tool_call_failed", ex.Message, ex.InnerException?.Message, nameof(McpToolServer)));
+            return BuildErrorResult(new McpToolError("tool_call_failed", ex.Message, ex.InnerException?.Message, nameof(McpToolServer), BuildRemediationHint(name, "tool_call_failed", arguments, ex.Message)));
         }
     }
 
@@ -625,7 +773,13 @@ public sealed class McpToolServer
             ToolNames.SessionCreateWorkbook => HandleCreateWorkbookAsync(arguments, cancellationToken),
             ToolNames.SessionListConnections => HandleListConnectionsAsync(cancellationToken),
             ToolNames.SessionGetConnection => HandleGetConnectionAsync(arguments, cancellationToken),
+            ToolNames.SessionGetDiagnostics => HandleGetSessionDiagnosticsAsync(arguments, cancellationToken),
             ToolNames.SessionDisconnectWorkbook => HandleDisconnectWorkbookAsync(arguments, cancellationToken),
+            ToolNames.DiagnosticsGetRuntime => HandleDiagnosticsGetRuntimeAsync(cancellationToken),
+            ToolNames.DiagnosticsListLogs => HandleDiagnosticsListLogsAsync(),
+            ToolNames.DiagnosticsReadLogTail => HandleDiagnosticsReadLogTailAsync(arguments, cancellationToken),
+            ToolNames.DiagnosticsBuildReport => HandleDiagnosticsBuildReportAsync(arguments, cancellationToken),
+            ToolNames.DiagnosticsSetLogLevel => HandleDiagnosticsSetLogLevelAsync(arguments),
             ToolNames.WorkbookSave => HandleWorkbookSaveAsync(arguments, cancellationToken),
             ToolNames.WorkbookSaveAs => HandleWorkbookSaveAsAsync(arguments, cancellationToken),
             ToolNames.WorkbookListInventory => HandleListInventoryAsync(arguments, cancellationToken),
@@ -636,7 +790,16 @@ public sealed class McpToolServer
             ToolNames.WorksheetMove => HandleWorksheetMoveAsync(arguments, cancellationToken),
             ToolNames.WorksheetCopy => HandleWorksheetCopyAsync(arguments, cancellationToken),
             ToolNames.WorksheetSetVisibility => HandleWorksheetSetVisibilityAsync(arguments, cancellationToken),
+            ToolNames.WorkbookGetDependencyGraph => HandleWorkbookGetDependencyGraphAsync(arguments, cancellationToken),
+            ToolNames.WorkbookGetStructureState => HandleWorkbookGetStructureStateAsync(arguments, cancellationToken),
+            ToolNames.WorkbookSetVisibility => HandleWorkbookSetVisibilityAsync(arguments, cancellationToken),
+            ToolNames.WorkbookGetProtection => HandleWorkbookGetProtectionAsync(arguments, cancellationToken),
+            ToolNames.WorkbookSetProtection => HandleWorkbookSetProtectionAsync(arguments, cancellationToken),
             ToolNames.QueryGet => HandleGetQueryAsync(arguments, cancellationToken),
+            ToolNames.QueryGetDetail => HandleGetQueryDetailAsync(arguments, cancellationToken),
+            ToolNames.QueryCreate => HandleCreateQueryAsync(arguments, cancellationToken),
+            ToolNames.QueryRename => HandleRenameQueryAsync(arguments, cancellationToken),
+            ToolNames.QueryDelete => HandleDeleteQueryAsync(arguments, cancellationToken),
             ToolNames.NameGet => HandleGetNameAsync(arguments, cancellationToken),
             ToolNames.NameRead => HandleReadNameAsync(arguments, cancellationToken),
             ToolNames.NameCreate => HandleCreateNameAsync(arguments, cancellationToken),
@@ -646,6 +809,10 @@ public sealed class McpToolServer
             ToolNames.QueryRunProbe => HandleProbeAsync(arguments, cancellationToken),
             ToolNames.QueryCleanupTemp => HandleCleanupAsync(arguments, cancellationToken),
             ToolNames.QuerySetFormula => HandleSetQueryFormulaAsync(arguments, cancellationToken),
+            ToolNames.ConnectionGet => HandleConnectionGetAsync(arguments, cancellationToken),
+            ToolNames.ConnectionRename => HandleConnectionRenameAsync(arguments, cancellationToken),
+            ToolNames.ConnectionUpdate => HandleConnectionUpdateAsync(arguments, cancellationToken),
+            ToolNames.ConnectionDelete => HandleConnectionDeleteAsync(arguments, cancellationToken),
             ToolNames.TableGet => HandleTableGetAsync(arguments, cancellationToken),
             ToolNames.TableRead => HandleTableReadAsync(arguments, cancellationToken),
             ToolNames.TableCreate => HandleTableCreateAsync(arguments, cancellationToken),
@@ -699,10 +866,57 @@ public sealed class McpToolServer
         return ExecuteAsObjectAsync(_workbookServices.GetConnectionAsync(connectionId, cancellationToken));
     }
 
+    private Task<object> HandleGetSessionDiagnosticsAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        return ExecuteAsObjectAsync(_workbookServices.GetSessionDiagnosticsAsync(target, cancellationToken));
+    }
+
     private Task<object> HandleDisconnectWorkbookAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var connectionId = GetRequiredString(arguments, "connectionId");
         return ExecuteAsObjectAsync(_workbookServices.DisconnectAsync(connectionId, cancellationToken));
+    }
+
+    private Task<object> HandleDiagnosticsGetRuntimeAsync(CancellationToken cancellationToken) =>
+        ExecuteAsObjectAsync(GetRuntimeDiagnosticsService().GetRuntimeSnapshotAsync(
+            _clientName,
+            _clientVersion,
+            GetToolSchemaProfileName(),
+            cancellationToken));
+
+    private Task<object> HandleDiagnosticsListLogsAsync() =>
+        Task.FromResult<object>(GetRuntimeDiagnosticsService().ListLogs());
+
+    private Task<object> HandleDiagnosticsReadLogTailAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var path = GetOptionalString(arguments, "path");
+        var kind = GetOptionalString(arguments, "kind");
+        var options = BuildRecentLogReadOptions(arguments);
+        return ExecuteAsObjectAsync(GetRuntimeDiagnosticsService().ReadLogTailAsync(path, kind, options, cancellationToken));
+    }
+
+    private Task<object> HandleDiagnosticsBuildReportAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var includeRecentLogTails = GetOptionalBoolean(arguments, "includeRecentLogTails") ?? false;
+        var options = BuildRecentLogReadOptions(arguments);
+        var target = HasWorkbookTarget(arguments) ? GetWorkbookTarget(arguments) : null;
+        return ExecuteAsObjectAsync(GetRuntimeDiagnosticsService().BuildReportAsync(
+            _clientName,
+            _clientVersion,
+            GetToolSchemaProfileName(),
+            target,
+            includeRecentLogTails,
+            options,
+            cancellationToken));
+    }
+
+    private Task<object> HandleDiagnosticsSetLogLevelAsync(JsonElement arguments)
+    {
+        var request = new RuntimeLogLevelChangeRequest(
+            GetRequiredString(arguments, "level"),
+            GetOptionalString(arguments, "scope") ?? "both");
+        return Task.FromResult<object>(GetRuntimeDiagnosticsService().SetLogLevel(request));
     }
 
     private Task<object> HandleWorkbookSaveAsync(JsonElement arguments, CancellationToken cancellationToken)
@@ -810,6 +1024,57 @@ public sealed class McpToolServer
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<object> HandleWorkbookGetDependencyGraphAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.GetDependencyGraphAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorkbookGetStructureStateAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.GetWorkbookStructureStateAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorkbookSetVisibilityAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new WorkbookVisibilityRequest(GetRequiredString(arguments, "visibility"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.SetWorkbookVisibilityAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorkbookGetProtectionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.GetWorkbookProtectionStateAsync(resolved.WorkbookPath, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleWorkbookSetProtectionAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new WorkbookProtectionUpdateRequest(
+            Mode: GetRequiredString(arguments, "mode"),
+            Password: GetOptionalString(arguments, "password"),
+            ProtectStructure: GetOptionalBoolean(arguments, "protectStructure"),
+            ProtectWindows: GetOptionalBoolean(arguments, "protectWindows"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.SetWorkbookProtectionAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<object> HandleGetQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var target = GetWorkbookTarget(arguments);
@@ -817,6 +1082,53 @@ public sealed class McpToolServer
         return await _workbookServices.ExecuteAsync(
             target,
             resolved => resolved.Service.GetQueryAsync(resolved.WorkbookPath, queryName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleGetQueryDetailAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var queryName = GetRequiredString(arguments, "queryName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.GetQueryDetailAsync(resolved.WorkbookPath, queryName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleCreateQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new QueryCreateRequest(
+            QueryName: GetRequiredString(arguments, "queryName"),
+            Formula: GetRequiredString(arguments, "formula"),
+            LoadMode: GetOptionalString(arguments, "loadMode") ?? QueryLoadModes.None,
+            DestinationSheetName: GetOptionalString(arguments, "destinationSheetName"),
+            DestinationAddress: GetOptionalString(arguments, "destinationAddress"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.CreateQueryAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleRenameQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new QueryRenameRequest(
+            QueryName: GetRequiredString(arguments, "queryName"),
+            NewQueryName: GetRequiredString(arguments, "newQueryName"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.RenameQueryAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleDeleteQueryAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var queryName = GetRequiredString(arguments, "queryName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.DeleteQueryAsync(resolved.WorkbookPath, queryName, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -921,6 +1233,54 @@ public sealed class McpToolServer
         return await _workbookServices.ExecuteAsync(
             target,
             resolved => resolved.Service.SetQueryFormulaAsync(resolved.WorkbookPath, queryName, formula, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleConnectionGetAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var connectionName = GetRequiredString(arguments, "connectionName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.GetConnectionAsync(resolved.WorkbookPath, connectionName, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleConnectionRenameAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new ConnectionRenameRequest(
+            ConnectionName: GetRequiredString(arguments, "connectionName"),
+            NewConnectionName: GetRequiredString(arguments, "newConnectionName"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.RenameConnectionAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleConnectionUpdateAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var request = new ConnectionUpdateRequest(
+            ConnectionName: GetRequiredString(arguments, "connectionName"),
+            RefreshWithRefreshAll: GetOptionalBoolean(arguments, "refreshWithRefreshAll"),
+            BackgroundQuery: GetOptionalBoolean(arguments, "backgroundQuery"),
+            EnableRefresh: GetOptionalBoolean(arguments, "enableRefresh"),
+            RefreshOnFileOpen: GetOptionalBoolean(arguments, "refreshOnFileOpen"),
+            SavePassword: GetOptionalBoolean(arguments, "savePassword"));
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.UpdateConnectionAsync(resolved.WorkbookPath, request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<object> HandleConnectionDeleteAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var target = GetWorkbookTarget(arguments);
+        var connectionName = GetRequiredString(arguments, "connectionName");
+        return await _workbookServices.ExecuteAsync(
+            target,
+            resolved => resolved.Service.DeleteConnectionAsync(resolved.WorkbookPath, connectionName, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1177,10 +1537,172 @@ public sealed class McpToolServer
     private static WorkbookTarget GetWorkbookTarget(JsonElement arguments) =>
         new(GetOptionalString(arguments, "workbookPath"), GetOptionalString(arguments, "connectionId"));
 
+    private static bool HasWorkbookTarget(JsonElement arguments) =>
+        !string.IsNullOrWhiteSpace(GetOptionalString(arguments, "workbookPath")) ||
+        !string.IsNullOrWhiteSpace(GetOptionalString(arguments, "connectionId"));
+
     private static bool IsErrorResult(JsonElement result) =>
         result.ValueKind == JsonValueKind.Object &&
         result.TryGetProperty("succeeded", out var succeeded) &&
         succeeded.ValueKind == JsonValueKind.False;
+
+    private HostRuntimeDiagnosticsService GetRuntimeDiagnosticsService() =>
+        _runtimeDiagnostics ?? throw new WorkbookTargetResolutionException(
+            "runtime_diagnostics_not_available",
+            "Runtime diagnostics are only available on the full GridPilot host resolver.");
+
+    private string GetToolSchemaProfileName() =>
+        _toolSchemaProfile == ToolSchemaProfile.VsCodeCopilotConservative ? "vscode-copilot-conservative" : "default";
+
+    private static RecentLogReadOptions? BuildRecentLogReadOptions(JsonElement arguments)
+    {
+        var maxLines = GetOptionalInt32(arguments, "maxLines");
+        var maxBytes = GetOptionalInt32(arguments, "maxBytes");
+        return maxLines is null && maxBytes is null
+            ? null
+            : new RecentLogReadOptions(
+                maxLines ?? RecentLogReadOptions.Default.MaxLines,
+                maxBytes ?? RecentLogReadOptions.Default.MaxBytes);
+    }
+
+    private JsonElement EnrichStructuredContent(string toolName, JsonElement structuredContent, JsonElement arguments)
+    {
+        if (structuredContent.ValueKind != JsonValueKind.Object)
+        {
+            return structuredContent;
+        }
+
+        var node = JsonNode.Parse(structuredContent.GetRawText())?.AsObject();
+        if (node is null)
+        {
+            return structuredContent;
+        }
+
+        var guidance = BuildWorkflowGuidance(toolName, structuredContent, arguments);
+        if (guidance is not null)
+        {
+            node["guidance"] = JsonSerializer.SerializeToNode(guidance, JsonOptions);
+        }
+
+        if (node["error"] is JsonObject errorNode &&
+            errorNode["code"]?.GetValue<string>() is { Length: > 0 } errorCode &&
+            BuildRemediationHint(toolName, errorCode, arguments, errorNode["message"]?.GetValue<string>()) is { } remediation)
+        {
+            errorNode["remediation"] = JsonSerializer.SerializeToNode(remediation, JsonOptions);
+        }
+
+        return ToJsonElement(node);
+    }
+
+    private ToolWorkflowGuidance? BuildWorkflowGuidance(string toolName, JsonElement structuredContent, JsonElement arguments)
+    {
+        var targetContext = BuildTargetContext(structuredContent, arguments);
+        if (targetContext is null)
+        {
+            return null;
+        }
+
+        var recommendedNextTools = toolName switch
+        {
+            ToolNames.SessionConnectWorkbook or ToolNames.SessionCreateWorkbook or ToolNames.SessionGetConnection =>
+            [
+                ToolNames.WorkbookListInventory,
+                ToolNames.SessionGetDiagnostics,
+                ToolNames.DiagnosticsGetRuntime
+            ],
+            ToolNames.WorkbookListInventory =>
+            [
+                ToolNames.RangeRead,
+                ToolNames.TableRead,
+                ToolNames.QueryGetDetail
+            ],
+            _ => Array.Empty<string>()
+        };
+
+        var hints = new List<string>
+        {
+            "Reuse this connectionId for later workbook calls whenever it is available."
+        };
+
+        if (toolName is ToolNames.SessionConnectWorkbook or ToolNames.SessionCreateWorkbook)
+        {
+            hints.Add("Run workbook_list_inventory next to confirm sheets, tables, queries, and connections before planning mutations.");
+            hints.Add("If attached-session work becomes unstable, use session_get_diagnostics and diagnostics_read_log_tail before cleanup.");
+        }
+
+        return new ToolWorkflowGuidance(targetContext, recommendedNextTools, hints);
+    }
+
+    private static ToolTargetContext? BuildTargetContext(JsonElement structuredContent, JsonElement arguments)
+    {
+        static string? ReadString(JsonElement source, string name) =>
+            source.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+
+        var connectionId = ReadString(structuredContent, "connectionId") ?? GetOptionalString(arguments, "connectionId");
+        var workbookPath = ReadString(structuredContent, "workbookPath") ?? GetOptionalString(arguments, "workbookPath");
+        var workbookName = ReadString(structuredContent, "workbookName");
+        var targetResolutionMode = ReadString(structuredContent, "connectionMode")
+            ?? (!string.IsNullOrWhiteSpace(connectionId) ? "connection_id" : !string.IsNullOrWhiteSpace(workbookPath) ? "workbook_path" : null);
+
+        return string.IsNullOrWhiteSpace(connectionId) && string.IsNullOrWhiteSpace(workbookPath)
+            ? null
+            : new ToolTargetContext(connectionId, workbookPath, workbookName, targetResolutionMode);
+    }
+
+    private static ToolRemediationHint? BuildRemediationHint(string toolName, string code, JsonElement arguments, string? message = null)
+    {
+        var targetArgs = BuildSuggestedTargetArguments(arguments);
+        return code switch
+        {
+            "workbook_target_required" or "connection_not_found" => new ToolRemediationHint(
+                "reuse_or_reconnect_workbook",
+                "Reconnect the workbook or reuse an active connectionId before retrying the workbook call.",
+                ToolNames.SessionListConnections,
+                new { }),
+            "workbook_name_not_found" or "attach_target_no_matching_instance" => new ToolRemediationHint(
+                "inspect_open_workbooks",
+                "Inspect the currently open Excel workbooks, then reconnect using the exact workbook title or path.",
+                ToolNames.SessionListOpenWorkbooks,
+                new { }),
+            "workbook_name_ambiguous" or "attach_target_multiple_matching_instances" => new ToolRemediationHint(
+                "disambiguate_workbook_target",
+                "Multiple workbook matches were found. Inspect open workbooks and reconnect using an exact workbookPath.",
+                ToolNames.SessionListOpenWorkbooks,
+                new { }),
+            "shared_session_approval_required" or "shared_session_approval_expired" or "shared_session_approval_scope_mismatch" =>
+                new ToolRemediationHint(
+                    "inspect_attached_session_state",
+                    "Inspect the attached Excel session state before retrying. If the session is healthy, refresh mutation approval and then retry the write.",
+                    ToolNames.SessionGetDiagnostics,
+                    targetArgs),
+            "tool_call_failed" => new ToolRemediationHint(
+                "capture_runtime_diagnostics",
+                message is { Length: > 0 } && message.Contains("RPC_E_DISCONNECTED", StringComparison.OrdinalIgnoreCase)
+                    ? "The Excel COM session disconnected. Capture session diagnostics and a recent runtime log tail before cleanup."
+                    : "Capture a recent runtime log tail and diagnostic report before retrying.",
+                ToolNames.DiagnosticsBuildReport,
+                targetArgs),
+            _ when toolName == ToolNames.SessionConnectWorkbook => new ToolRemediationHint(
+                "inspect_connectivity_state",
+                "Inspect workbook discovery, session diagnostics, and runtime logs before retrying the connection.",
+                ToolNames.DiagnosticsGetRuntime,
+                new { }),
+            _ => null
+        };
+    }
+
+    private static object BuildSuggestedTargetArguments(JsonElement arguments)
+    {
+        var workbookPath = GetOptionalString(arguments, "workbookPath");
+        var connectionId = GetOptionalString(arguments, "connectionId");
+        return new
+        {
+            workbookPath,
+            connectionId
+        };
+    }
 
     private static string GetRequiredString(JsonElement element, string propertyName)
     {
@@ -1871,6 +2393,11 @@ public sealed class McpToolServer
 
         public Task<WorkbookDisconnectResult> DisconnectAsync(string connectionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new WorkbookDisconnectResult(true, connectionId, string.Empty, false));
+
+        public Task<SessionDiagnostics> GetSessionDiagnosticsAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromException<SessionDiagnostics>(new WorkbookTargetResolutionException(
+                "runtime_diagnostics_not_available",
+                "Session diagnostics are not available on a shared workbook service resolver."));
 
         public Task<MutationPermissionGrantResult> GrantMutationPermissionAsync(MutationPermissionGrantRequest request, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
             Task.FromException<MutationPermissionGrantResult>(new WorkbookTargetResolutionException(

@@ -1,10 +1,13 @@
 using ExcelMcp.Bridge.Contracts;
 using ExcelMcp.Bridge.Services;
 using ExcelMcp.Core.Abstractions;
+using ExcelMcp.Core.Logging;
 using ExcelMcp.Core.Results;
+using ExcelMcp.Deployment.Logs;
 using ExcelMcp.IntegrationTests.Fakes;
 using ExcelMcp.Core;
 using ExcelMcp.ToolHost;
+using ExcelMcp.ToolHost.Diagnostics;
 using ExcelMcp.ToolHost.Mcp;
 using System.Text.Json;
 
@@ -38,7 +41,13 @@ public sealed class McpToolServerTests
                 ToolNames.SessionCreateWorkbook,
                 ToolNames.SessionListConnections,
                 ToolNames.SessionGetConnection,
+                ToolNames.SessionGetDiagnostics,
                 ToolNames.SessionDisconnectWorkbook,
+                ToolNames.DiagnosticsGetRuntime,
+                ToolNames.DiagnosticsListLogs,
+                ToolNames.DiagnosticsReadLogTail,
+                ToolNames.DiagnosticsBuildReport,
+                ToolNames.DiagnosticsSetLogLevel,
                 ToolNames.WorkbookSave,
                 ToolNames.WorkbookSaveAs,
                 ToolNames.WorkbookListInventory,
@@ -49,7 +58,16 @@ public sealed class McpToolServerTests
                 ToolNames.WorksheetMove,
                 ToolNames.WorksheetCopy,
                 ToolNames.WorksheetSetVisibility,
+                ToolNames.WorkbookGetDependencyGraph,
+                ToolNames.WorkbookGetStructureState,
+                ToolNames.WorkbookSetVisibility,
+                ToolNames.WorkbookGetProtection,
+                ToolNames.WorkbookSetProtection,
                 ToolNames.QueryGet,
+                ToolNames.QueryGetDetail,
+                ToolNames.QueryCreate,
+                ToolNames.QueryRename,
+                ToolNames.QueryDelete,
                 ToolNames.NameGet,
                 ToolNames.NameRead,
                 ToolNames.NameCreate,
@@ -59,6 +77,10 @@ public sealed class McpToolServerTests
                 ToolNames.QueryRunProbe,
                 ToolNames.QueryCleanupTemp,
                 ToolNames.QuerySetFormula,
+                ToolNames.ConnectionGet,
+                ToolNames.ConnectionRename,
+                ToolNames.ConnectionUpdate,
+                ToolNames.ConnectionDelete,
                 ToolNames.TableGet,
                 ToolNames.TableRead,
                 ToolNames.TableCreate,
@@ -200,6 +222,155 @@ public sealed class McpToolServerTests
         Assert.Equal(@"C:\temp\created.xlsx", result.StructuredContent.GetProperty("workbookPath").GetString());
         Assert.Equal("not_applicable", result.StructuredContent.GetProperty("approvalState").GetString());
         Assert.Equal("not_applicable", result.StructuredContent.GetProperty("mutationPermissionState").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ConnectWorkbook_AddsGuidanceBlock()
+    {
+        var server = new McpToolServer(new ConnectionAwareResolver());
+
+        var result = await server.CallToolAsync(
+            ToolNames.SessionConnectWorkbook,
+            JsonSerializer.SerializeToElement(new { workbookPath = @"C:\temp\connected.xlsx" }));
+
+        Assert.False(result.IsError);
+        var guidance = result.StructuredContent.GetProperty("guidance");
+        Assert.Equal("conn-1", guidance.GetProperty("targetContext").GetProperty("connectionId").GetString());
+        Assert.Contains(
+            guidance.GetProperty("recommendedNextTools").EnumerateArray().Select(item => item.GetString()),
+            tool => string.Equals(tool, ToolNames.WorkbookListInventory, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CallToolAsync_SessionGetDiagnostics_ReturnsStructuredSessionState()
+    {
+        var server = new McpToolServer(new ConnectionAwareResolver());
+
+        var result = await server.CallToolAsync(
+            ToolNames.SessionGetDiagnostics,
+            JsonSerializer.SerializeToElement(new { connectionId = "conn-1" }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("AttachToRunning", result.StructuredContent.GetProperty("sessionMode").GetString());
+        Assert.True(result.StructuredContent.GetProperty("isReady").GetBoolean());
+        Assert.False(result.StructuredContent.GetProperty("hasModalUi").GetBoolean());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_DiagnosticsGetRuntime_ReturnsRuntimeSnapshot()
+    {
+        var server = CreateRuntimeAwareServer();
+        server.Initialize("2024-11-05", "codex", "1.2.3");
+
+        var result = await server.CallToolAsync(
+            ToolNames.DiagnosticsGetRuntime,
+            JsonSerializer.SerializeToElement(new { }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("codex", result.StructuredContent.GetProperty("clientName").GetString());
+        Assert.Equal("default", result.StructuredContent.GetProperty("schemaProfile").GetString());
+        Assert.Equal("info", result.StructuredContent.GetProperty("effectiveLogLevel").GetString());
+        Assert.True(result.StructuredContent.GetProperty("runtimeLogLevelOverrideSupported").GetBoolean());
+        Assert.True(result.StructuredContent.GetProperty("connections").ValueKind == JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_DiagnosticsSetLogLevel_UpdatesRuntimeAndPersistentOverride()
+    {
+        var server = CreateRuntimeAwareServer();
+
+        var result = await server.CallToolAsync(
+            ToolNames.DiagnosticsSetLogLevel,
+            JsonSerializer.SerializeToElement(new { level = "trace", scope = "both" }));
+
+        Assert.False(result.IsError);
+        Assert.Equal("trace", result.StructuredContent.GetProperty("effectiveRuntimeLevel").GetString());
+        Assert.Equal("trace", result.StructuredContent.GetProperty("persistentOverride").GetProperty("logLevelOverride").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_DiagnosticsReadLogTail_ReadsBoundedTail()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "gridpilot-mcp-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        var logPath = Path.Combine(tempDirectory, "runtime.log");
+        await File.WriteAllLinesAsync(logPath, ["first", "second", "third"]);
+
+        var server = CreateRuntimeAwareServer(logPath: logPath);
+
+        var result = await server.CallToolAsync(
+            ToolNames.DiagnosticsReadLogTail,
+            JsonSerializer.SerializeToElement(new { path = logPath, maxLines = 2, maxBytes = 1024 }));
+
+        Assert.False(result.IsError);
+        Assert.Equal(logPath, result.StructuredContent.GetProperty("path").GetString());
+        Assert.Equal(2, result.StructuredContent.GetProperty("lines").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_DiagnosticsBuildReport_IncludesRuntimeSection()
+    {
+        var server = CreateRuntimeAwareServer();
+        server.Initialize("2024-11-05", "codex", "1.2.3");
+
+        var result = await server.CallToolAsync(
+            ToolNames.DiagnosticsBuildReport,
+            JsonSerializer.SerializeToElement(new { includeRecentLogTails = false }));
+
+        Assert.False(result.IsError);
+        Assert.Contains("# GridPilot Runtime Diagnostic Report", result.StructuredContent.GetProperty("content").GetString(), StringComparison.Ordinal);
+        Assert.Contains("## Runtime", result.StructuredContent.GetProperty("content").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_TargetResolutionFailure_AddsRemediationHint()
+    {
+        var server = new McpToolServer(new ThrowingWorkbookServiceResolver(
+            new WorkbookTargetResolutionException("connection_not_found", "No workbook connection with id 'missing' exists.")));
+
+        var result = await server.CallToolAsync(
+            ToolNames.WorkbookSave,
+            JsonSerializer.SerializeToElement(new { connectionId = "missing" }));
+
+        Assert.True(result.IsError);
+        Assert.Equal("reuse_or_reconnect_workbook", result.StructuredContent.GetProperty("error").GetProperty("remediation").GetProperty("hintCode").GetString());
+        Assert.Equal(ToolNames.SessionListConnections, result.StructuredContent.GetProperty("error").GetProperty("remediation").GetProperty("recommendedTool").GetString());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_AttachedSafetyFailure_AddsDiagnosticsRemediation()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession
+        {
+            Workbook = fakeWorkbook,
+            Diagnostics = new SessionDiagnostics(ExcelSessionMode.AttachToRunning, true, true, ExcelCalculationState.Done, SessionAttachTargetMode.WorkbookOwner)
+        };
+        var server = new McpToolServer(new WorkbookService(session, new WorkbookOperationSafety(session, new InMemoryAttachedMutationApprovalRegistry())));
+
+        var result = await server.CallToolAsync(
+            ToolNames.RangeWrite,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                writes = new[]
+                {
+                    new
+                    {
+                        sheetName = "Sheet1",
+                        address = "A1",
+                        values = new object?[][]
+                        {
+                            new object?[] { "A" }
+                        }
+                    }
+                }
+            }));
+
+        Assert.True(result.IsError);
+        Assert.Equal(
+            ToolNames.SessionGetDiagnostics,
+            result.StructuredContent.GetProperty("error").GetProperty("remediation").GetProperty("recommendedTool").GetString());
     }
 
     [Fact]
@@ -538,6 +709,43 @@ public sealed class McpToolServerTests
     }
 
     [Fact]
+    public async Task CallToolAsync_QueryRunProbe_ReturnsJsonSerializablePreview()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        fakeWorkbook.OnRunProbeAsync = request => Task.FromResult(
+            new ProbeResult(
+                true,
+                request.TargetQueryName,
+                request.TempQueryName,
+                new RangeReadResult(
+                    "Sheet1",
+                    "$A$1:$B$2",
+                    new IReadOnlyList<object?>[]
+                    {
+                        new object?[] { "Column 1", "Column 2" },
+                        new object?[] { "value", 42d }
+                    })));
+
+        var server = CreateServer(fakeWorkbook);
+
+        var result = await server.CallToolAsync(
+            ToolNames.QueryRunProbe,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery",
+                tempPrefix = "tmp_probe"
+            }));
+
+        Assert.False(result.IsError);
+        Assert.True(result.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("SalesQuery", result.StructuredContent.GetProperty("targetQuery").GetString());
+        Assert.StartsWith("tmp_probe_SalesQuery_", result.StructuredContent.GetProperty("tempQuery").GetString(), StringComparison.Ordinal);
+        Assert.Equal("Sheet1", result.StructuredContent.GetProperty("preview").GetProperty("sheetName").GetString());
+        Assert.Equal("Column 1", result.StructuredContent.GetProperty("preview").GetProperty("values")[0][0].GetString());
+    }
+
+    [Fact]
     public async Task CallToolAsync_ReturnsStructuredErrorForMissingArguments()
     {
         var server = CreateServer();
@@ -695,6 +903,130 @@ public sealed class McpToolServerTests
         Assert.Equal("SalesQuery", result.StructuredContent.GetProperty("queryName").GetString());
         Assert.Single(fakeWorkbook.SetQueryFormulaCalls);
         Assert.Equal(1, fakeWorkbook.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_QueryLifecycleTools_ReturnStructuredResultsAndRecordCalls()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            QueryDetail = new QueryDetail("SalesQuery", "let Source = 1 in Source", "Sales feed", QueryLoadModes.Worksheet, "Sheet1", "$A$1", "Query - SalesQuery", "query:SalesQuery")
+        };
+        var server = CreateServer(fakeWorkbook);
+
+        var create = await server.CallToolAsync(
+            ToolNames.QueryCreate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery",
+                formula = "let Source = 1 in Source",
+                loadMode = "worksheet",
+                destinationSheetName = "Sheet1",
+                destinationAddress = "$A$1"
+            }));
+        var detail = await server.CallToolAsync(
+            ToolNames.QueryGetDetail,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery"
+            }));
+        var rename = await server.CallToolAsync(
+            ToolNames.QueryRename,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery",
+                newQueryName = "RevenueQuery"
+            }));
+        var delete = await server.CallToolAsync(
+            ToolNames.QueryDelete,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                queryName = "SalesQuery"
+            }));
+
+        Assert.True(create.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("worksheet", create.StructuredContent.GetProperty("loadMode").GetString());
+        Assert.Equal("Query - SalesQuery", detail.StructuredContent.GetProperty("connectionName").GetString());
+        Assert.True(rename.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.True(delete.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Single(fakeWorkbook.CreatedQueries);
+        Assert.Single(fakeWorkbook.RenamedQueries);
+        Assert.Single(fakeWorkbook.DeletedQueries);
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ConnectionAndWorkbookStructureTools_ReturnStructuredResults()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            ConnectionDetail = new ConnectionDetail("Query - SalesQuery", "2", true, false, true, false, false, "SalesQuery", ["Sheet1!$A$1:$D$20"], "connection:Query - SalesQuery"),
+            DependencyGraph = new WorkbookDependencyGraph(
+            [
+                new WorkbookDependencyNode("query:SalesQuery", WorkbookDependencyNodeKinds.Query, "SalesQuery"),
+                new WorkbookDependencyNode("connection:Query - SalesQuery", WorkbookDependencyNodeKinds.Connection, "Query - SalesQuery")
+            ],
+            [
+                new WorkbookDependencyEdge("query:SalesQuery", "connection:Query - SalesQuery", WorkbookDependencyEdgeKinds.QueryUsesConnection)
+            ]),
+            WorkbookStructureState = new WorkbookStructureState(WorkbookVisibilityModes.Visible, new WorkbookProtectionState(true, true, false)),
+            WorkbookProtectionState = new WorkbookProtectionState(true, true, false)
+        };
+        var server = CreateServer(fakeWorkbook);
+
+        var connectionGet = await server.CallToolAsync(
+            ToolNames.ConnectionGet,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                connectionName = "Query - SalesQuery"
+            }));
+        var connectionUpdate = await server.CallToolAsync(
+            ToolNames.ConnectionUpdate,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                connectionName = "Query - SalesQuery",
+                refreshWithRefreshAll = false,
+                enableRefresh = true
+            }));
+        var graph = await server.CallToolAsync(
+            ToolNames.WorkbookGetDependencyGraph,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx"
+            }));
+        var structure = await server.CallToolAsync(
+            ToolNames.WorkbookGetStructureState,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx"
+            }));
+        var visibility = await server.CallToolAsync(
+            ToolNames.WorkbookSetVisibility,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx",
+                visibility = "hidden"
+            }));
+        var protection = await server.CallToolAsync(
+            ToolNames.WorkbookGetProtection,
+            JsonSerializer.SerializeToElement(new
+            {
+                workbookPath = @"C:\temp\book.xlsx"
+            }));
+
+        Assert.Equal("SalesQuery", connectionGet.StructuredContent.GetProperty("linkedQueryName").GetString());
+        Assert.True(connectionUpdate.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.Single(graph.StructuredContent.GetProperty("edges").EnumerateArray());
+        Assert.Equal("visible", structure.StructuredContent.GetProperty("visibility").GetString());
+        Assert.True(visibility.StructuredContent.GetProperty("succeeded").GetBoolean());
+        Assert.True(protection.StructuredContent.GetProperty("isProtected").GetBoolean());
+        Assert.Single(fakeWorkbook.UpdatedConnections);
+        Assert.Single(fakeWorkbook.WorkbookVisibilityChanges);
     }
 
     [Fact]
@@ -1499,6 +1831,26 @@ public sealed class McpToolServerTests
         return new McpToolServer(new WorkbookService(fakeSession));
     }
 
+    private static McpToolServer CreateRuntimeAwareServer(IWorkbookServiceResolver? resolver = null, string? logPath = null)
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "gridpilot-mcp-runtime-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        logPath ??= Path.Combine(tempDirectory, "runtime.log");
+        var settingsPath = Path.Combine(tempDirectory, "runtime-settings.json");
+        var options = new HostOptions(SessionMode.Attach, SessionAttachTargetMode.WorkbookOwner, false, GridPilotLogLevel.Info, logPath)
+        {
+            BaseLogLevel = GridPilotLogLevel.Info,
+            EffectiveLogPath = logPath,
+            RuntimeDiagnosticsSettingsPath = settingsPath,
+            PersistentLogLevelOverride = null,
+            PersistentLogLevelOverrideApplied = false
+        };
+        var logger = GridPilotLoggerFactory.Create(options.LogLevel, options.EffectiveLogPath);
+        var activeResolver = resolver ?? new ConnectionAwareResolver();
+        var diagnostics = new HostRuntimeDiagnosticsService(options, logger, new RuntimeDiagnosticsOverrideStore(settingsPath), activeResolver);
+        return new McpToolServer(activeResolver, diagnostics, logger);
+    }
+
     private sealed class ThrowingWorkbookServiceResolver : IWorkbookServiceResolver
     {
         private readonly Exception _exception;
@@ -1821,6 +2173,14 @@ public sealed class McpToolServerTests
 
         public Task<AttachedMutationApprovalRevokeResult> RevokeAttachedMutationApprovalAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
             Task.FromResult(new AttachedMutationApprovalRevokeResult(true, target.WorkbookPath ?? @"C:\temp\connected.xlsx", true));
+
+        public Task<SessionDiagnostics> GetSessionDiagnosticsAsync(WorkbookTarget target, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SessionDiagnostics(
+                ExcelSessionMode.AttachToRunning,
+                true,
+                true,
+                ExcelCalculationState.Done,
+                SessionAttachTargetMode.WorkbookOwner));
     }
 
     private sealed class RetargetingConnectionResolver : IWorkbookServiceResolver

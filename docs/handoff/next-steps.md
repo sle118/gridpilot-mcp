@@ -1,21 +1,25 @@
 # Next Steps
 
-The bridge now has a broad enough workbook surface that MCP tool expansion should pause while the project focuses on **deployment core + tray shell** work.
+The bridge now covers the next workbook slice and the new MCP-first diagnosis slice, so the project should balance **deployment core + tray shell** work with targeted live validation of the newer workbook lifecycle and guidance/diagnostics surfaces.
 
 ## Immediate Priorities
 
-1. **Validate DEPLOY-011 manually**
+1. **Validate the new guidance and diagnosis surface manually**
+   Drive attached workbook-owner flows on a real workstation, raise runtime logging through `diagnostics_set_log_level`, inspect `session_get_diagnostics`, tail logs with `diagnostics_read_log_tail`, capture a `diagnostics_build_report` artifact, and confirm that remediation hints help weaker agents recover from attach/session failures.
+2. **Validate DEPLOY-011 manually**
    Run per-user install, machine-wide install, startup enable/disable, update, repair, and uninstall passes from the public ZIP on a separate Windows machine.
-2. **Validate the tray DEPLOY-010 action manually**
+3. **Validate the tray DEPLOY-010 action manually**
    Verify the new tray preview-and-write flow against real `%APPDATA%\\Code\\User\\mcp.json` content, including unrelated MCP servers, malformed JSON, dry-run preview, backup creation, and already-matching configs.
-3. **Validate the Copilot compatibility manifest path manually**
+4. **Validate the Copilot compatibility manifest path manually**
    Confirm that the VS Code / GitHub Copilot client receives the conservative no-array-input manifest for the affected tools and can invoke the array-heavy write operations through the string-encoded JSON compatibility path.
-4. **Preserve deployment-core layering**
+5. **Validate the new workbook lifecycle slice in live Excel**
+   Exercise query create/rename/delete, query-owned connection behavior, connection rename/update/delete, dependency graph reads, and workbook protection/visibility changes against real desktop Excel workbooks.
+6. **Preserve deployment-core layering**
    Reuse the existing `ExcelMcp.ToolProxy` / `McpFrameSniffer` lessons, preserve framed and raw JSON-RPC stdio support, keep runtime logs file-backed, and keep MCP stdout JSON-RPC only.
 
 ## Recommended Next Slice
 
-After the public release flow is validated, the best next bounded slice is:
+After the public release flow, the guidance/diagnosis slice, and the new workbook lifecycle slice are validated, the best next bounded slice is:
 
 - setup-side opt-in wiring for the DEPLOY-010 VS Code user config writer
 - keep install/startup behavior conservative and user-visible while config writing remains preview-first and never automatic
@@ -35,5 +39,7 @@ Config-writing actions must stay conservative: preview diffs, back up existing f
 - keep live Excel tests opt-in
 - keep COM details isolated behind interfaces
 - keep runtime logging separate from MCP stdout and proxy transport traces
+- keep the new guidance/remediation layer explicit and additive; do not introduce hidden “current workbook” state
 - do not put deployment-core behavior directly in the future tray project
 - keep the GitLab release jobs pinned to a Windows runner tag so provisioning stays deterministic
+- keep workbook dependency graphs intentionally metadata-scoped until there is a dedicated lineage slice

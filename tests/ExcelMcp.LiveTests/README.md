@@ -18,3 +18,8 @@ Environment gates:
 
 - `RUN_LIVE_EXCEL_TESTS=1` enables the standard live suite
 - `RUN_ATTACHED_LIVE_EXCEL_TESTS=1` additionally enables the attached-session live tests
+
+For the full repeatable agent workflow, reporting template, and manual validation guidance, use:
+
+- `docs/topics/agent-live-testing-guide.md`
+- `docs/topics/agent-driven-gridpilot-validation-guide.md`

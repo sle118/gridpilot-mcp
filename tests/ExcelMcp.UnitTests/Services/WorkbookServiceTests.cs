@@ -79,6 +79,123 @@ public sealed class WorkbookServiceTests
     }
 
     [Fact]
+    public async Task QueryAndConnectionDetailMethods_ReturnDataFromWorkbookHandle()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnGetQueryDetailAsync = name => Task.FromResult(new QueryDetail(name, "let Source = 1 in Source", "Sales feed", QueryLoadModes.Worksheet, "Sheet1", "$A$1", "Query - SalesQuery", $"query:{name}")),
+            OnGetConnectionAsync = name => Task.FromResult(new ConnectionDetail(name, "2", true, false, true, false, false, "SalesQuery", ["Sheet1!$A$1:$D$20"], $"connection:{name}")),
+            OnGetDependencyGraphAsync = () => Task.FromResult(new WorkbookDependencyGraph(
+            [
+                new WorkbookDependencyNode("query:SalesQuery", WorkbookDependencyNodeKinds.Query, "SalesQuery"),
+                new WorkbookDependencyNode("connection:Query - SalesQuery", WorkbookDependencyNodeKinds.Connection, "Query - SalesQuery")
+            ],
+            [
+                new WorkbookDependencyEdge("query:SalesQuery", "connection:Query - SalesQuery", WorkbookDependencyEdgeKinds.QueryUsesConnection)
+            ]))
+        };
+
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var query = await sut.GetQueryDetailAsync(@"C:\temp\book.xlsx", "SalesQuery");
+        var connection = await sut.GetConnectionAsync(@"C:\temp\book.xlsx", "Query - SalesQuery");
+        var graph = await sut.GetDependencyGraphAsync(@"C:\temp\book.xlsx");
+
+        Assert.Equal(QueryLoadModes.Worksheet, query.LoadMode);
+        Assert.Equal("Sheet1", query.DestinationSheetName);
+        Assert.Equal("SalesQuery", connection.LinkedQueryName);
+        Assert.Single(graph.Edges);
+    }
+
+    [Fact]
+    public async Task CreateQueryAsync_SavesWorkbookOnSuccess()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnGetQueryDetailAsync = name => Task.FromResult(new QueryDetail(name, "let Source = 1 in Source", null, QueryLoadModes.Worksheet, "Sheet1", "$A$1", "Query - SalesQuery", $"query:{name}"))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CreateQueryAsync(
+            @"C:\temp\book.xlsx",
+            new QueryCreateRequest("SalesQuery", "let Source = 1 in Source", QueryLoadModes.Worksheet, "Sheet1", "$A$1"));
+
+        Assert.True(result.Succeeded);
+        Assert.Single(fakeWorkbook.CreatedQueries);
+        Assert.Equal(1, fakeWorkbook.SaveCallCount);
+        Assert.Equal("Query - SalesQuery", result.ConnectionName);
+    }
+
+    [Fact]
+    public async Task CreateQueryAsync_RejectsWorksheetLoadWithoutDestination()
+    {
+        var session = new FakeExcelSession { Workbook = new FakeWorkbookHandle() };
+        var sut = new WorkbookService(session);
+
+        var result = await sut.CreateQueryAsync(
+            @"C:\temp\book.xlsx",
+            new QueryCreateRequest("SalesQuery", "let Source = 1 in Source", QueryLoadModes.Worksheet));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("query_create_invalid", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task RenameAndUpdateConnectionMethods_RecordCallsAndValidate()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle();
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var rename = await sut.RenameConnectionAsync(
+            @"C:\temp\book.xlsx",
+            new ConnectionRenameRequest("Query - SalesQuery", "Query - RevenueQuery"));
+        var invalidUpdate = await sut.UpdateConnectionAsync(
+            @"C:\temp\book.xlsx",
+            new ConnectionUpdateRequest("Query - SalesQuery"));
+        var validUpdate = await sut.UpdateConnectionAsync(
+            @"C:\temp\book.xlsx",
+            new ConnectionUpdateRequest("Query - SalesQuery", RefreshWithRefreshAll: false, EnableRefresh: true));
+
+        Assert.True(rename.Succeeded);
+        Assert.Single(fakeWorkbook.RenamedConnections);
+        Assert.False(invalidUpdate.Succeeded);
+        Assert.Equal("connection_update_invalid", invalidUpdate.Error?.Code);
+        Assert.True(validUpdate.Succeeded);
+        Assert.Single(fakeWorkbook.UpdatedConnections);
+    }
+
+    [Fact]
+    public async Task WorkbookStructureMethods_SaveWorkbookAndValidate()
+    {
+        var fakeWorkbook = new FakeWorkbookHandle
+        {
+            OnGetWorkbookStructureStateAsync = () => Task.FromResult(new WorkbookStructureState(
+                WorkbookVisibilityModes.Visible,
+                new WorkbookProtectionState(true, true, false))),
+            OnGetWorkbookProtectionStateAsync = () => Task.FromResult(new WorkbookProtectionState(true, true, false))
+        };
+        var session = new FakeExcelSession { Workbook = fakeWorkbook };
+        var sut = new WorkbookService(session);
+
+        var structure = await sut.GetWorkbookStructureStateAsync(@"C:\temp\book.xlsx");
+        var protection = await sut.GetWorkbookProtectionStateAsync(@"C:\temp\book.xlsx");
+        var visibilityResult = await sut.SetWorkbookVisibilityAsync(@"C:\temp\book.xlsx", new WorkbookVisibilityRequest("hidden"));
+        var invalidProtection = await sut.SetWorkbookProtectionAsync(
+            @"C:\temp\book.xlsx",
+            new WorkbookProtectionUpdateRequest("unprotect", ProtectStructure: true));
+
+        Assert.Equal(WorkbookVisibilityModes.Visible, structure.Visibility);
+        Assert.True(protection.IsProtected);
+        Assert.True(visibilityResult.Succeeded);
+        Assert.Single(fakeWorkbook.WorkbookVisibilityChanges);
+        Assert.False(invalidProtection.Succeeded);
+        Assert.Equal("workbook_set_protection_invalid", invalidProtection.Error?.Code);
+    }
+
+    [Fact]
     public async Task ReadNamedRangeAsync_ReturnsConvertedValues()
     {
         var fakeWorkbook = new FakeWorkbookHandle();
@@ -1656,6 +1773,19 @@ public sealed class WorkbookServiceTests
         public Task<IReadOnlyList<ConnectionSummary>> ListConnectionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ConnectionSummary>>(Array.Empty<ConnectionSummary>());
         public Task<IReadOnlyList<NameSummary>> ListNamesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<NameSummary>>(Array.Empty<NameSummary>());
         public Task<QueryDefinition> GetQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDefinition(queryName, string.Empty));
+        public Task<QueryDetail> GetQueryDetailAsync(string queryName, CancellationToken cancellationToken = default) => Task.FromResult(new QueryDetail(queryName, string.Empty, null, QueryLoadModes.None, null, null, null, $"query:{queryName}"));
+        public Task CreateQueryAsync(QueryCreateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RenameQueryAsync(QueryRenameRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteQueryAsync(string queryName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<ConnectionDetail> GetConnectionAsync(string connectionName, CancellationToken cancellationToken = default) => Task.FromResult(new ConnectionDetail(connectionName, "2", true, null, null, null, null, null, Array.Empty<string>(), $"connection:{connectionName}"));
+        public Task RenameConnectionAsync(ConnectionRenameRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateConnectionAsync(ConnectionUpdateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteConnectionAsync(string connectionName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<WorkbookDependencyGraph> GetDependencyGraphAsync(CancellationToken cancellationToken = default) => Task.FromResult(new WorkbookDependencyGraph(Array.Empty<WorkbookDependencyNode>(), Array.Empty<WorkbookDependencyEdge>()));
+        public Task<WorkbookStructureState> GetWorkbookStructureStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(new WorkbookStructureState(WorkbookVisibilityModes.Visible, new WorkbookProtectionState(false, false, false)));
+        public Task<WorkbookProtectionState> GetWorkbookProtectionStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(new WorkbookProtectionState(false, false, false));
+        public Task SetWorkbookVisibilityAsync(WorkbookVisibilityRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SetWorkbookProtectionAsync(WorkbookProtectionUpdateRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<NameSummary> GetNameAsync(string name, string? sheetName = null, CancellationToken cancellationToken = default) => Task.FromResult(new NameSummary(name, sheetName is null ? "Workbook" : "Worksheet", sheetName, string.Empty, null));
         public Task CreateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UpdateNameAsync(string name, string refersTo, string? sheetName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
