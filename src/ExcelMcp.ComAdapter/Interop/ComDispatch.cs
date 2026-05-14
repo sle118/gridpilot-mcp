@@ -10,24 +10,40 @@ internal static class ComDispatch
 {
     public static T GetProperty<T>(object target, string propertyName)
     {
-        var value = target.GetType().InvokeMember(
-            propertyName,
-            BindingFlags.GetProperty,
-            binder: null,
-            target,
-            args: null);
+        object? value;
+        try
+        {
+            value = target.GetType().InvokeMember(
+                propertyName,
+                BindingFlags.GetProperty,
+                binder: null,
+                target,
+                args: null);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
 
         return value is null ? default! : (T)value;
     }
 
     public static T GetProperty<T>(object target, string propertyName, params object?[]? args)
     {
-        var value = target.GetType().InvokeMember(
-            propertyName,
-            BindingFlags.GetProperty,
-            binder: null,
-            target,
-            args);
+        object? value;
+        try
+        {
+            value = target.GetType().InvokeMember(
+                propertyName,
+                BindingFlags.GetProperty,
+                binder: null,
+                target,
+                args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
 
         return value is null ? default! : (T)value;
     }
@@ -60,8 +76,16 @@ internal static class ComDispatch
             }
         }
 
-        value = property.GetValue(target);
-        return true;
+        try
+        {
+            value = property.GetValue(target);
+            return true;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            value = ex.InnerException;
+            return false;
+        }
     }
 
     public static void SetProperty(object target, string propertyName, object? value)
@@ -76,12 +100,19 @@ internal static class ComDispatch
 
     public static object? InvokeMethod(object target, string methodName, params object?[]? args)
     {
-        return target.GetType().InvokeMember(
-            methodName,
-            BindingFlags.InvokeMethod,
-            binder: null,
-            target,
-            args);
+        try
+        {
+            return target.GetType().InvokeMember(
+                methodName,
+                BindingFlags.InvokeMethod,
+                binder: null,
+                target,
+                args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
     }
 
     public static bool TryInvokeMethod(object target, string methodName, out object? value, params object?[]? args)

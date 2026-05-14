@@ -1,5 +1,6 @@
 using ExcelMcp.ComAdapter.Interop;
 using ExcelMcp.Core.Results;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace ExcelMcp.UnitTests.Interop;
@@ -213,19 +214,55 @@ public sealed class ComWorkbookHandleTests
         Assert.Equal(0, workbook.CloseCallCount);
     }
 
+    [Fact]
+    public async Task DisposeAsync_IgnoresDisconnectedWorkbookWhenMetadataAccessFailsAfterClose()
+    {
+        var workbook = new FakeWorkbookComObject();
+        await using var sut = new ComWorkbookHandle(workbook);
+
+        var exception = await Record.ExceptionAsync(() => sut.DisposeAsync().AsTask());
+
+        Assert.Null(exception);
+        Assert.Equal(1, workbook.CloseCallCount);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_IgnoresDisconnectedWorkbookWhenCloseThrows()
+    {
+        var workbook = new FakeWorkbookComObject
+        {
+            CloseException = CreateDisconnectedComException()
+        };
+        var sut = new ComWorkbookHandle(workbook);
+
+        var exception = await Record.ExceptionAsync(() => sut.DisposeAsync().AsTask());
+
+        Assert.Null(exception);
+        Assert.Equal(1, workbook.CloseCallCount);
+    }
+
     private sealed class FakeWorkbookComObject
     {
-        public string Name { get; init; } = "fake.xlsx";
-        public string FullName { get; init; } = @"C:\temp\fake.xlsx";
+        private bool _closed;
+
+        public string Name => _closed ? throw CreateDisconnectedComException() : "fake.xlsx";
+        public string FullName => _closed ? throw CreateDisconnectedComException() : @"C:\temp\fake.xlsx";
         public List<FakeSheetComObject> Sheets { get; init; } = [];
         public List<FakeQueryComObject> QueryItems { get; init; } = [];
         public IEnumerable<FakeQueryComObject> Queries => QueryItems.Where(query => !query.Deleted);
         public List<FakeConnectionComObject> Connections { get; init; } = [];
         public int CloseCallCount { get; private set; }
+        public Exception? CloseException { get; init; }
 
         public void Close(bool saveChanges)
         {
             CloseCallCount++;
+            if (CloseException is not null)
+            {
+                throw CloseException;
+            }
+
+            _closed = true;
         }
     }
 
@@ -280,4 +317,7 @@ public sealed class ComWorkbookHandleTests
             Deleted = true;
         }
     }
+
+    private static COMException CreateDisconnectedComException() =>
+        new("The object invoked has disconnected from its clients.", unchecked((int)0x80010108));
 }

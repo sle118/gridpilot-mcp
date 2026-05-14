@@ -20,7 +20,7 @@ public sealed class LiveProbeTests
         Assert.True(probe.Succeeded);
         Assert.NotNull(probe.Preview);
         Assert.StartsWith("tmp_probe_live_tbleWithErrorRemoved_", probe.TempQuery, StringComparison.Ordinal);
-        Assert.True(probe.Preview!.Values.GetLength(0) >= 2);
+        Assert.True(probe.Preview!.Values.Count >= 2);
 
         var queries = await context.WorkbookService.ListQueriesAsync(context.WorkbookPath);
         Assert.DoesNotContain(queries, query => query.Name == probe.TempQuery);
@@ -43,7 +43,7 @@ public sealed class LiveProbeTests
 
         Assert.True(probe.Succeeded);
         Assert.NotNull(probe.Preview);
-        Assert.True(probe.Preview!.Values.GetLength(0) >= 2);
-        Assert.Contains("Column 1", probe.Preview.Values[1, 1]?.ToString(), StringComparison.Ordinal);
+        Assert.True(probe.Preview!.Values.Count >= 2);
+        Assert.Contains("Some text", probe.Preview.Values[1][1]?.ToString(), StringComparison.Ordinal);
     }
 }
